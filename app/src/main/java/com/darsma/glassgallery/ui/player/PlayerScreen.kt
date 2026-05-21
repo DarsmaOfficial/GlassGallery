@@ -3,7 +3,9 @@
 package com.darsma.glassgallery.ui.player
 
 import android.content.ContentUris
+import android.content.Intent
 import android.provider.MediaStore
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -15,9 +17,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -28,15 +30,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -44,10 +49,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,10 +64,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -71,6 +81,17 @@ import com.darsma.glassgallery.ui.components.liquidGlass
 import kotlinx.coroutines.delay
 
 private val ControlsShape = RoundedCornerShape(26.dp)
+
+// Available playback speeds cycling order
+private val SPEED_STEPS = listOf(0.5f, 1.0f, 1.25f, 1.5f, 2.0f)
+private fun Float.label(): String = when (this) {
+    0.5f  -> "0.5×"
+    1.0f  -> "1×"
+    1.25f -> "1.25×"
+    1.5f  -> "1.5×"
+    2.0f  -> "2×"
+    else  -> "${this}×"
+}
 
 @Composable
 fun PlayerScreen(
@@ -105,7 +126,15 @@ fun PlayerScreen(
     var isSeeking       by remember { mutableStateOf(false) }
     var seekPreview     by remember { mutableLongStateOf(0L) }
 
-    // Listener keeps play/pause state instant; polling only advances the clock.
+    // Speed — persists across config changes
+    var speed by rememberSaveable { mutableFloatStateOf(1.0f) }
+
+    // Apply speed whenever it changes
+    LaunchedEffect(speed) {
+        player.playbackParameters = PlaybackParameters(speed)
+    }
+
+    // Listener for instant play/pause + progress polling at 60 fps intervals
     LaunchedEffect(player) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
@@ -114,16 +143,13 @@ fun PlayerScreen(
         while (true) {
             if (!isSeeking) currentPosition = player.currentPosition
             duration = if (player.duration != C.TIME_UNSET) player.duration else 0L
-            delay(60L)   // ~16 fps clock; SmoothSeekBar springs between samples
+            delay(60L)
         }
     }
 
-    // Controls slide in shortly after the morph settles.
+    // Controls animate in shortly after morph settles
     var controlsVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(180L)
-        controlsVisible = true
-    }
+    LaunchedEffect(Unit) { delay(200L); controlsVisible = true }
 
     with(sharedTransitionScope) {
         Box(
@@ -131,8 +157,9 @@ fun PlayerScreen(
                 .fillMaxSize()
                 .background(Color.Black),
         ) {
-            // Video surface — shares the SAME key as the gallery thumbnail,
-            // so the thumbnail morphs straight into the player video.
+            // ── Video surface ─────────────────────────────────────────────
+            // Key matches gallery VideoCard AND MiniPlayer capsule so that
+            // tapping a thumbnail OR re-opening from MiniPlayer both morph correctly.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -155,14 +182,12 @@ fun PlayerScreen(
                 )
             }
 
-            // Top bar slides down + fades in.
+            // ── Top bar ───────────────────────────────────────────────────
             AnimatedVisibility(
-                visible = controlsVisible,
-                enter   = slideInVertically(
-                    initialOffsetY = { -it },
-                    animationSpec  = spring(dampingRatio = 0.8f, stiffness = 300f),
-                ) + fadeIn(spring(stiffness = Spring.StiffnessLow)),
-                exit    = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+                visible  = controlsVisible,
+                enter    = slideInVertically({ -it }, spring(dampingRatio = 0.8f, stiffness = 300f)) +
+                           fadeIn(spring(stiffness = Spring.StiffnessLow)),
+                exit     = slideOutVertically({ -it }) + fadeOut(),
                 modifier = Modifier.align(Alignment.TopStart),
             ) {
                 Row(
@@ -175,16 +200,12 @@ fun PlayerScreen(
                         .padding(horizontal = 6.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    GlassIconButton(
-                        onClick = onBack,
-                        size    = 46.dp,
-                    ) {
-                        Icon(
-                            imageVector        = Icons.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint               = Color.White,
-                        )
+                    // Back
+                    GlassIconButton(onClick = onBack, size = 46.dp) {
+                        Icon(Icons.Filled.ArrowBack, "Back", tint = Color.White)
                     }
+                    Spacer(Modifier.width(4.dp))
+                    // Title
                     Text(
                         text       = video?.title ?: "",
                         style      = MaterialTheme.typography.titleMedium,
@@ -192,19 +213,31 @@ fun PlayerScreen(
                         color      = Color.White,
                         maxLines   = 1,
                         overflow   = TextOverflow.Ellipsis,
-                        modifier   = Modifier.weight(1f).padding(horizontal = 12.dp),
+                        modifier   = Modifier.weight(1f).padding(horizontal = 8.dp),
                     )
+                    // Share
+                    GlassIconButton(
+                        onClick = {
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type  = "video/*"
+                                putExtra(Intent.EXTRA_STREAM, videoUri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share video"))
+                        },
+                        size = 46.dp,
+                    ) {
+                        Icon(Icons.Filled.Share, "Share", tint = Color.White)
+                    }
                 }
             }
 
-            // Bottom controls slide up + fade in.
+            // ── Bottom controls ───────────────────────────────────────────
             AnimatedVisibility(
-                visible = controlsVisible,
-                enter   = slideInVertically(
-                    initialOffsetY = { it },
-                    animationSpec  = spring(dampingRatio = 0.8f, stiffness = 300f),
-                ) + fadeIn(spring(stiffness = Spring.StiffnessLow)),
-                exit    = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                visible  = controlsVisible,
+                enter    = slideInVertically({ it }, spring(dampingRatio = 0.8f, stiffness = 300f)) +
+                           fadeIn(spring(stiffness = Spring.StiffnessLow)),
+                exit     = slideOutVertically({ it }) + fadeOut(),
                 modifier = Modifier.align(Alignment.BottomStart),
             ) {
                 Column(
@@ -225,30 +258,58 @@ fun PlayerScreen(
                         onScrubStart = { isSeeking = true },
                         onScrub      = { f -> seekPreview = (f * durationMs).toLong() },
                         onScrubEnd   = { f ->
-                            val target = (f * durationMs).toLong()
-                            player.seekTo(target)
-                            currentPosition = target
+                            val t = (f * durationMs).toLong()
+                            player.seekTo(t)
+                            currentPosition = t
                             isSeeking = false
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
 
+                    Spacer(Modifier.height(6.dp))
+
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Elapsed time
                         Text(
                             text  = livePos.formatMs(),
                             style = MaterialTheme.typography.labelMedium,
                             color = Color.White,
                         )
                         Spacer(Modifier.weight(1f))
+
+                        // Play / Pause
                         PlayPauseButton(
                             isPlaying = isPlaying,
                             onClick   = { if (player.isPlaying) player.pause() else player.play() },
                         )
+
                         Spacer(Modifier.weight(1f))
+                        // Duration
                         Text(
                             text  = durationMs.formatMs(),
                             style = MaterialTheme.typography.labelMedium,
                             color = Color.White,
+                        )
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // ── Speed pill ─────────────────────────────────────────
+                    Row(
+                        modifier         = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text  = "Speed",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.55f),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        SpeedPill(
+                            currentSpeed = speed,
+                            onSpeedChange = { newSpeed ->
+                                speed = newSpeed
+                            },
                         )
                     }
                 }
@@ -256,6 +317,60 @@ fun PlayerScreen(
         }
     }
 }
+
+// ── Speed cycling pill ────────────────────────────────────────────────────────
+
+@Composable
+private fun SpeedPill(
+    currentSpeed: Float,
+    onSpeedChange: (Float) -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pillScale by animateFloatAsState(
+        targetValue   = if (pressed) 0.88f else 1f,
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
+        label         = "speed-pill-scale",
+    )
+
+    Box(
+        modifier = Modifier
+            .scale(pillScale)
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+            .clickable(
+                interactionSource = interaction,
+                indication        = null,
+            ) {
+                val idx  = SPEED_STEPS.indexOf(currentSpeed).coerceAtLeast(0)
+                val next = SPEED_STEPS[(idx + 1) % SPEED_STEPS.size]
+                onSpeedChange(next)
+            }
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        AnimatedContent(
+            targetState  = currentSpeed.label(),
+            transitionSpec = {
+                val enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
+                    scaleIn(initialScale = 0.6f, animationSpec = spring(dampingRatio = 0.6f))
+                val exit  = fadeOut(spring(stiffness = Spring.StiffnessMedium)) +
+                    scaleOut(targetScale = 0.6f, animationSpec = spring(dampingRatio = 0.6f))
+                enter togetherWith exit
+            },
+            label = "speed-label",
+        ) { label ->
+            Text(
+                text       = label,
+                fontSize   = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color      = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
+
+// ── Play / Pause button ───────────────────────────────────────────────────────
 
 @Composable
 private fun PlayPauseButton(
@@ -267,14 +382,14 @@ private fun PlayPauseButton(
     val scale by animateFloatAsState(
         targetValue   = if (pressed) 0.84f else 1f,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
-        label = "playpause-scale",
+        label         = "playpause-scale",
     )
     Box(
         modifier = Modifier
             .scale(scale)
-            .size(60.dp)
+            .size(62.dp)
             .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.14f))
+            .background(Color.White.copy(alpha = 0.15f))
             .clickable(
                 interactionSource = interaction,
                 indication        = null,
@@ -282,13 +397,12 @@ private fun PlayPauseButton(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        // Icon swap cross-fades.
-        androidx.compose.animation.AnimatedContent(
-            targetState   = isPlaying,
+        AnimatedContent(
+            targetState  = isPlaying,
             transitionSpec = {
                 val enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
                     scaleIn(initialScale = 0.7f, animationSpec = spring(dampingRatio = 0.55f))
-                val exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)) +
+                val exit  = fadeOut(spring(stiffness = Spring.StiffnessMedium)) +
                     scaleOut(targetScale = 0.7f, animationSpec = spring(dampingRatio = 0.55f))
                 enter togetherWith exit
             },
@@ -304,10 +418,12 @@ private fun PlayPauseButton(
     }
 }
 
+// ── Glass icon button ─────────────────────────────────────────────────────────
+
 @Composable
 private fun GlassIconButton(
     onClick: () -> Unit,
-    size: androidx.compose.ui.unit.Dp,
+    size: Dp,
     content: @Composable () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -315,7 +431,7 @@ private fun GlassIconButton(
     val scale by animateFloatAsState(
         targetValue   = if (pressed) 0.82f else 1f,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
-        label = "glass-icon-scale",
+        label         = "icon-btn-scale",
     )
     Box(
         modifier = Modifier
@@ -331,6 +447,8 @@ private fun GlassIconButton(
         contentAlignment = Alignment.Center,
     ) { content() }
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 private fun Long.formatMs(): String {
     val s   = this / 1_000L

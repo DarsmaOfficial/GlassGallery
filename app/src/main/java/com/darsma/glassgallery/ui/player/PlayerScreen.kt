@@ -185,9 +185,9 @@ fun PlayerScreen(
             // ── Top bar ───────────────────────────────────────────────────
             AnimatedVisibility(
                 visible  = controlsVisible,
-                enter    = slideInVertically({ -it }, spring(dampingRatio = 0.8f, stiffness = 300f)) +
+                enter    = slideInVertically(initialOffsetY = { -it }, animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f)) +
                            fadeIn(spring(stiffness = Spring.StiffnessLow)),
-                exit     = slideOutVertically({ -it }) + fadeOut(),
+                exit     = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
                 modifier = Modifier.align(Alignment.TopStart),
             ) {
                 Row(
@@ -235,9 +235,9 @@ fun PlayerScreen(
             // ── Bottom controls ───────────────────────────────────────────
             AnimatedVisibility(
                 visible  = controlsVisible,
-                enter    = slideInVertically({ it }, spring(dampingRatio = 0.8f, stiffness = 300f)) +
+                enter    = slideInVertically(initialOffsetY = { it }, animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f)) +
                            fadeIn(spring(stiffness = Spring.StiffnessLow)),
-                exit     = slideOutVertically({ it }) + fadeOut(),
+                exit     = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                 modifier = Modifier.align(Alignment.BottomStart),
             ) {
                 Column(

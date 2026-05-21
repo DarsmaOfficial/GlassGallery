@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,8 +31,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -52,7 +53,8 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.darsma.glassgallery.data.Video
 
-private val CapsuleShape = RoundedCornerShape(22.dp)
+private val CapsuleShape = RoundedCornerShape(24.dp)
+private val PillShape    = RoundedCornerShape(50)
 
 @Composable
 fun MiniPlayer(
@@ -69,11 +71,11 @@ fun MiniPlayer(
         visible = video != null,
         enter = slideInVertically(
             initialOffsetY = { it },
-            animationSpec  = spring(dampingRatio = 0.75f, stiffness = 360f),
+            animationSpec  = spring(dampingRatio = 0.78f, stiffness = 360f),
         ) + fadeIn(spring(stiffness = Spring.StiffnessLow)),
         exit = slideOutVertically(
             targetOffsetY = { it },
-            animationSpec = spring(dampingRatio = 0.75f, stiffness = 360f),
+            animationSpec = spring(dampingRatio = 0.78f, stiffness = 360f),
         ) + fadeOut(),
         modifier = modifier.fillMaxWidth(),
     ) {
@@ -92,7 +94,7 @@ fun MiniPlayer(
                 modifier = Modifier
                     .padding(horizontal = 14.dp, vertical = 8.dp)
                     .fillMaxWidth()
-                    .height(72.dp)
+                    .height(76.dp)
                     .sharedBounds(
                         sharedContentState      = rememberSharedContentState(
                             key = "video-surface-${video.id}"
@@ -104,13 +106,12 @@ fun MiniPlayer(
                     )
                     .scale(capsuleScale)
                     .clip(CapsuleShape)
-                    // Rich gradient background
                     .background(
                         Brush.horizontalGradient(
                             colors = listOf(
-                                Color(0xFF1E1540),
-                                Color(0xFF251C4A),
-                                Color(0xFF1E1540),
+                                Color(0xFF221A47),
+                                Color(0xFF2A2156),
+                                Color(0xFF201842),
                             )
                         )
                     )
@@ -129,14 +130,14 @@ fun MiniPlayer(
                     // ── Thumbnail ─────────────────────────────────────────
                     Box(
                         modifier = Modifier
-                            .width(100.dp)
-                            .height(72.dp)
+                            .width(104.dp)
+                            .fillMaxHeight()
                             .clip(
                                 RoundedCornerShape(
-                                    topStart     = 22.dp,
-                                    bottomStart  = 22.dp,
-                                    topEnd       = 0.dp,
-                                    bottomEnd    = 0.dp,
+                                    topStart    = 24.dp,
+                                    bottomStart = 24.dp,
+                                    topEnd      = 0.dp,
+                                    bottomEnd   = 0.dp,
                                 )
                             ),
                     ) {
@@ -146,7 +147,7 @@ fun MiniPlayer(
                             contentScale       = ContentScale.Crop,
                             modifier           = Modifier.fillMaxSize(),
                         )
-                        // gradient fade into card body
+                        // Gradient fade into the card body.
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -154,18 +155,18 @@ fun MiniPlayer(
                                     Brush.horizontalGradient(
                                         colors = listOf(
                                             Color.Transparent,
-                                            Color(0x881E1540),
+                                            Color(0xCC221A47),
                                         )
                                     )
                                 )
                         )
                     }
 
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(13.dp))
 
                     // ── Title + sub-row ───────────────────────────────────
                     Column(
-                        modifier         = Modifier.weight(1f),
+                        modifier            = Modifier.weight(1f),
                         verticalArrangement = Arrangement.Center,
                     ) {
                         Text(
@@ -176,43 +177,50 @@ fun MiniPlayer(
                             maxLines   = 1,
                             overflow   = TextOverflow.Ellipsis,
                         )
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(3.dp))
                         Text(
-                            text  = "Now Playing",
+                            text     = "Now Playing",
                             fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.45f),
+                            color    = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
                         )
-                        Spacer(Modifier.height(6.dp))
-                        // Mini progress bar
+                        Spacer(Modifier.height(7.dp))
                         MiniProgressBar(progress = progress)
                     }
 
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(12.dp))
 
                     // ── Play / Pause ──────────────────────────────────────
                     Box(
                         modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(50))
+                            .size(46.dp)
+                            .clip(PillShape)
                             .background(
                                 Brush.radialGradient(
                                     colors = listOf(
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.50f),
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
                                     )
                                 )
                             )
+                            .liquidGlassBorder(PillShape)
                             .clickable(onClick = onPlayPause),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector        = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            imageVector        = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                             contentDescription = null,
                             tint               = Color.White,
                             modifier           = Modifier.size(26.dp),
                         )
                     }
                 }
+
+                // Hairline glass edge over the whole capsule.
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .liquidGlassBorder(CapsuleShape)
+                )
             }
         }
     }
@@ -222,21 +230,24 @@ fun MiniPlayer(
 private fun MiniProgressBar(progress: Float) {
     val animatedProgress by animateFloatAsState(
         targetValue   = progress.coerceIn(0f, 1f),
-        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness    = Spring.StiffnessMediumLow,
+        ),
         label         = "mini-progress",
     )
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(3.dp)
-            .clip(RoundedCornerShape(50))
+            .clip(PillShape)
             .background(Color.White.copy(alpha = 0.15f)),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth(animatedProgress)
                 .height(3.dp)
-                .clip(RoundedCornerShape(50))
+                .clip(PillShape)
                 .background(
                     Brush.horizontalGradient(
                         colors = listOf(

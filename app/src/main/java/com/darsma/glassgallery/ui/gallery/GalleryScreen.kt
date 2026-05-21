@@ -106,8 +106,7 @@ fun GalleryScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(64.dp)
-                    .liquidGlass()
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.60f)),
+                    .liquidGlass(alpha = 0.40f),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Text(

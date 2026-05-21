@@ -40,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -110,6 +111,7 @@ fun PlayerScreen(
                     },
                 ),
         ) {
+            // Video surface — fills the screen, NOT blurred.
             AndroidView(
                 factory = { ctx ->
                     PlayerView(ctx).apply {
@@ -120,50 +122,45 @@ fun PlayerScreen(
                 modifier = Modifier.fillMaxSize(),
             )
 
-            // Top bar
-            Box(
+            // Top bar — translucent glass tint, content stays sharp.
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopStart)
                     .systemBarsPadding()
-                    .padding(8.dp)
-                    .liquidGlass()
-                    .background(Color.Black.copy(alpha = 0.30f), ControlsShape),
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .clip(ControlsShape)
+                    .liquidGlass(alpha = 0.45f)
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-                        Icon(
-                            imageVector        = Icons.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint               = Color.White,
-                        )
-                    }
-                    Text(
-                        text     = video?.title ?: "",
-                        style    = MaterialTheme.typography.titleMedium,
-                        color    = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f).padding(end = 12.dp),
+                IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        imageVector        = Icons.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint               = Color.White,
                     )
                 }
+                Text(
+                    text     = video?.title ?: "",
+                    style    = MaterialTheme.typography.titleMedium,
+                    color    = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(end = 12.dp),
+                )
             }
 
-            // Bottom controls
+            // Bottom controls — translucent glass tint, content stays sharp.
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomStart)
                     .systemBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 12.dp)
-                    .liquidGlass()
-                    .background(Color.Black.copy(alpha = 0.35f), ControlsShape)
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                    .padding(horizontal = 16.dp, vertical = 16.dp)
+                    .clip(ControlsShape)
+                    .liquidGlass(alpha = 0.50f)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 val durationMs = duration.coerceAtLeast(1L)
                 val progress   = (currentPosition.toFloat() / durationMs).coerceIn(0f, 1f)
@@ -189,26 +186,26 @@ fun PlayerScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text  = currentPosition.formatMs(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.80f),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White,
                     )
                     Spacer(Modifier.weight(1f))
                     IconButton(
                         onClick  = { if (player.isPlaying) player.pause() else player.play() },
-                        modifier = Modifier.size(52.dp),
+                        modifier = Modifier.size(56.dp),
                     ) {
                         Icon(
                             imageVector        = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                             contentDescription = null,
                             tint               = Color.White,
-                            modifier           = Modifier.size(36.dp),
+                            modifier           = Modifier.size(40.dp),
                         )
                     }
                     Spacer(Modifier.weight(1f))
                     Text(
                         text  = duration.formatMs(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.80f),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White,
                     )
                 }
             }

@@ -75,11 +75,7 @@ fun MiniPlayer(
                         },
                     )
                     .clip(PillShape)
-                    .liquidGlass()
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-                        PillShape,
-                    )
+                    .liquidGlass(alpha = 0.62f)
                     .clickable(onClick = onClick),
             ) {
                 Row(

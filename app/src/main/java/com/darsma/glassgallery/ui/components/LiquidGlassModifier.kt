@@ -1,63 +1,31 @@
 package com.darsma.glassgallery.ui.components
 
-import android.annotation.SuppressLint
-import android.graphics.RenderEffect
-import android.graphics.Shader
-import android.os.Build
-import android.util.Log
-import androidx.annotation.RequiresApi
+import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asComposeRenderEffect
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onSizeChanged
-import com.darsma.glassgallery.ui.theme.LIQUID_GLASS_AGSL
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 
+/**
+ * Liquid-glass surface styling.
+ *
+ * NOTE: A real backdrop blur requires capturing the content *behind* the element.
+ * Applying RenderEffect to graphicsLayer blurs the element's OWN content (including
+ * text and video), which is wrong. So this implementation uses a translucent
+ * gradient tint that reads as "frosted glass" without destroying content underneath.
+ *
+ * @param tint base glass colour
+ * @param alpha translucency of the glass
+ */
 @Composable
-fun Modifier.liquidGlass(): Modifier {
-    var w by remember { mutableFloatStateOf(100f) }
-    var h by remember { mutableFloatStateOf(100f) }
-
-    // Safe RuntimeShader creation — if AGSL fails to compile, falls back to blur only.
-    val runtimeShader: android.graphics.RuntimeShader? = remember {
-        if (Build.VERSION.SDK_INT >= 33) {
-            @SuppressLint("NewApi")
-            try {
-                android.graphics.RuntimeShader(LIQUID_GLASS_AGSL)
-            } catch (e: Exception) {
-                Log.w("LiquidGlass", "AGSL compilation failed, falling back to blur", e)
-                null
-            }
-        } else null
-    }
-
-    return this
-        .onSizeChanged { size ->
-            w = size.width.toFloat()
-            h = size.height.toFloat()
-            if (Build.VERSION.SDK_INT >= 33 && runtimeShader != null) {
-                @SuppressLint("NewApi")
-                runtimeShader.setFloatUniform("size", w, h)
-            }
-        }
-        .graphicsLayer {
-            renderEffect = when {
-                Build.VERSION.SDK_INT >= 33 && runtimeShader != null ->
-                    buildApi33Effect(runtimeShader).asComposeRenderEffect()
-                else ->
-                    RenderEffect.createBlurEffect(24f, 24f, Shader.TileMode.CLAMP)
-                        .asComposeRenderEffect()
-            }
-        }
-}
-
-@RequiresApi(33)
-private fun buildApi33Effect(rs: android.graphics.RuntimeShader): RenderEffect {
-    val blur   = RenderEffect.createBlurEffect(24f, 24f, Shader.TileMode.CLAMP)
-    val shader = RenderEffect.createRuntimeShaderEffect(rs, "content")
-    return RenderEffect.createChainEffect(blur, shader)
-}
+fun Modifier.liquidGlass(
+    tint: Color = Color(0xFF1A1730),
+    alpha: Float = 0.55f,
+): Modifier = this.background(
+    brush = Brush.verticalGradient(
+        colors = listOf(
+            tint.copy(alpha = alpha + 0.12f),
+            tint.copy(alpha = alpha),
+        )
+    )
+)

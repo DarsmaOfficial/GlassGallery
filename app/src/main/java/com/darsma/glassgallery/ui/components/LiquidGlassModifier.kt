@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
+import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,10 +22,16 @@ fun Modifier.liquidGlass(): Modifier {
     var w by remember { mutableFloatStateOf(100f) }
     var h by remember { mutableFloatStateOf(100f) }
 
+    // Safe RuntimeShader creation — if AGSL fails to compile, falls back to blur only.
     val runtimeShader: android.graphics.RuntimeShader? = remember {
         if (Build.VERSION.SDK_INT >= 33) {
             @SuppressLint("NewApi")
-            android.graphics.RuntimeShader(LIQUID_GLASS_AGSL)
+            try {
+                android.graphics.RuntimeShader(LIQUID_GLASS_AGSL)
+            } catch (e: Exception) {
+                Log.w("LiquidGlass", "AGSL compilation failed, falling back to blur", e)
+                null
+            }
         } else null
     }
 
@@ -38,11 +45,12 @@ fun Modifier.liquidGlass(): Modifier {
             }
         }
         .graphicsLayer {
-            renderEffect = if (Build.VERSION.SDK_INT >= 33 && runtimeShader != null) {
-                buildApi33Effect(runtimeShader).asComposeRenderEffect()
-            } else {
-                RenderEffect.createBlurEffect(24f, 24f, Shader.TileMode.CLAMP)
-                    .asComposeRenderEffect()
+            renderEffect = when {
+                Build.VERSION.SDK_INT >= 33 && runtimeShader != null ->
+                    buildApi33Effect(runtimeShader).asComposeRenderEffect()
+                else ->
+                    RenderEffect.createBlurEffect(24f, 24f, Shader.TileMode.CLAMP)
+                        .asComposeRenderEffect()
             }
         }
 }

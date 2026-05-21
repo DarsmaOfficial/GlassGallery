@@ -73,9 +73,6 @@ fun MiniPlayer(
                         boundsTransform = { _, _ ->
                             spring(dampingRatio = 0.8f, stiffness = 380f)
                         },
-                        clipInOverlayDuringTransition = SharedTransitionScope.OverlayClip(
-                            MorphShape(morph = playerMorph, progress = 0f)
-                        ),
                     )
                     .clip(PillShape)
                     .liquidGlass()
@@ -104,9 +101,9 @@ fun MiniPlayer(
                         modifier = Modifier.size(40.dp),
                     ) {
                         Icon(
-                            imageVector     = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            imageVector        = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                             contentDescription = null,
-                            tint            = MaterialTheme.colorScheme.onSurface,
+                            tint               = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }

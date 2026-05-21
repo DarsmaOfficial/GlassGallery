@@ -11,6 +11,5 @@ class GlassGalleryApp : Application(), SingletonImageLoader.Factory {
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
             .components { add(VideoFrameDecoder.Factory()) }
-            .crossfade(true)
             .build()
 }

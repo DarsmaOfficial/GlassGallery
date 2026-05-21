@@ -13,16 +13,16 @@ import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.toPath
 
-private val pillPolygon: RoundedPolygon = RoundedPolygon.rectangle(
-    width   = 4f,
-    height  = 1f,
-    rounding = CornerRounding(radius = 1.0f),
+// Pill: 4-sided polygon with maximum corner rounding
+private val pillPolygon: RoundedPolygon = RoundedPolygon(
+    numVertices = 4,
+    rounding    = CornerRounding(radius = 1.0f),
 )
 
-private val roundedRectPolygon: RoundedPolygon = RoundedPolygon.rectangle(
-    width    = 3f,
-    height   = 2f,
-    rounding = CornerRounding(radius = 0.28f),
+// Rounded rectangle: 4-sided polygon with moderate rounding
+private val roundedRectPolygon: RoundedPolygon = RoundedPolygon(
+    numVertices = 4,
+    rounding    = CornerRounding(radius = 0.3f),
 )
 
 val playerMorph: Morph = Morph(start = pillPolygon, end = roundedRectPolygon)
@@ -31,7 +31,6 @@ class MorphShape(
     private val morph: Morph,
     private val progress: Float,
 ) : Shape {
-
     override fun createOutline(
         size: Size,
         layoutDirection: LayoutDirection,

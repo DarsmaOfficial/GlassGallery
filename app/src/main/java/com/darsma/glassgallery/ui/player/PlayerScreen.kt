@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
@@ -110,8 +109,6 @@ fun PlayerScreen(
                     boundsTransform = { _, _ ->
                         spring(dampingRatio = 0.8f, stiffness = 380f)
                     },
-                    clipInOverlayDuringTransition = SharedTransitionScope.OverlayClip(
-                        MorphShape(morph = playerMorph, progress = 1f)
                     ),
                 ),
         ) {
@@ -144,7 +141,7 @@ fun PlayerScreen(
                 ) {
                     IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                         Icon(
-                            imageVector        = Icons.AutoMirrored.Filled.ArrowBack,
+                            imageVector        = Icons.Default.ArrowBack,
                             contentDescription = "Back",
                             tint               = Color.White,
                         )

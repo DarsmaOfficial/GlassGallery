@@ -192,8 +192,6 @@ private fun VideoCard(
                     boundsTransform = { _, _ ->
                         spring(dampingRatio = 0.8f, stiffness = 380f)
                     },
-                    clipInOverlayDuringTransition = SharedTransitionScope.OverlayClip(
-                        MorphShape(playerMorph, 0f)
                     ),
                 )
                 .clip(ThumbShape)

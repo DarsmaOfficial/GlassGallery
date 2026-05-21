@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
@@ -50,9 +51,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.darsma.glassgallery.data.MediaStoreVideoSource
 import com.darsma.glassgallery.data.Video
-import com.darsma.glassgallery.ui.components.MorphShape
 import com.darsma.glassgallery.ui.components.liquidGlass
-import com.darsma.glassgallery.ui.components.playerMorph
 import kotlinx.coroutines.delay
 
 private val ControlsShape = RoundedCornerShape(20.dp)
@@ -104,15 +103,13 @@ fun PlayerScreen(
                 .fillMaxSize()
                 .background(Color.Black)
                 .sharedBounds(
-                    sharedContentState = rememberSharedContentState("now-bar-$videoId"),
+                    sharedContentState      = rememberSharedContentState("now-bar-$videoId"),
                     animatedVisibilityScope = animatedVisibilityScope,
                     boundsTransform = { _, _ ->
                         spring(dampingRatio = 0.8f, stiffness = 380f)
                     },
-                    ),
                 ),
         ) {
-            // Video surface via AndroidView + PlayerView (useController=false)
             AndroidView(
                 factory = { ctx ->
                     PlayerView(ctx).apply {
@@ -141,7 +138,7 @@ fun PlayerScreen(
                 ) {
                     IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                         Icon(
-                            imageVector        = Icons.Default.ArrowBack,
+                            imageVector        = Icons.Filled.ArrowBack,
                             contentDescription = "Back",
                             tint               = Color.White,
                         )
@@ -174,7 +171,7 @@ fun PlayerScreen(
                 Slider(
                     value = progress,
                     onValueChange = { fraction ->
-                        isSeeking = true
+                        isSeeking       = true
                         currentPosition = (fraction * durationMs).toLong()
                     },
                     onValueChangeFinished = {
@@ -220,9 +217,9 @@ fun PlayerScreen(
 }
 
 private fun Long.formatMs(): String {
-    val s = this / 1_000L
-    val h = s / 3600
-    val m = (s % 3600) / 60
+    val s   = this / 1_000L
+    val h   = s / 3600
+    val m   = (s % 3600) / 60
     val sec = s % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
 }

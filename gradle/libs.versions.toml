@@ -28,7 +28,7 @@ media3-exoplayer            = { group = "androidx.media3",             name = "m
 media3-ui                   = { group = "androidx.media3",             name = "media3-ui",                   version.ref = "media3" }
 coil-compose                = { group = "io.coil-kt.coil3",            name = "coil-compose",                version.ref = "coil" }
 coil-video                  = { group = "io.coil-kt.coil3",            name = "coil-video",                  version.ref = "coil" }
-compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core" }
+compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 
 [plugins]
 android-application = { id = "com.android.application",             version.ref = "agp" }

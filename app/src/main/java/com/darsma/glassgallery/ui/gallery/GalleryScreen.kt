@@ -51,9 +51,7 @@ import coil3.compose.AsyncImage
 import com.darsma.glassgallery.R
 import com.darsma.glassgallery.data.Video
 import com.darsma.glassgallery.ui.components.MiniPlayer
-import com.darsma.glassgallery.ui.components.MorphShape
 import com.darsma.glassgallery.ui.components.liquidGlass
-import com.darsma.glassgallery.ui.components.playerMorph
 
 private val ThumbShape = RoundedCornerShape(14.dp)
 
@@ -94,17 +92,16 @@ fun GalleryScreen(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar      = {
             MiniPlayer(
-                video                  = currentVideo,
-                isPlaying              = false,
-                onPlayPause            = {},
-                onClick                = onMiniPlayerClick,
-                sharedTransitionScope  = sharedTransitionScope,
+                video                   = currentVideo,
+                isPlaying               = false,
+                onPlayPause             = {},
+                onClick                 = onMiniPlayerClick,
+                sharedTransitionScope   = sharedTransitionScope,
                 animatedVisibilityScope = animatedVisibilityScope,
             )
         },
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues)) {
-
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -149,19 +146,19 @@ fun GalleryScreen(
 
                 is GalleryUiState.Success -> with(sharedTransitionScope) {
                     LazyVerticalGrid(
-                        columns             = GridCells.Adaptive(128.dp),
-                        modifier            = Modifier.fillMaxSize(),
-                        contentPadding      = PaddingValues(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        columns               = GridCells.Adaptive(128.dp),
+                        modifier              = Modifier.fillMaxSize(),
+                        contentPadding        = PaddingValues(8.dp),
+                        verticalArrangement   = Arrangement.spacedBy(6.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         items(state.videos, key = { it.id }) { video ->
                             VideoCard(
-                                video                  = video,
-                                sharedTransitionScope  = this@with,
+                                video                   = video,
+                                sharedTransitionScope   = this@with,
                                 animatedVisibilityScope = animatedVisibilityScope,
-                                onClick                = { onVideoClick(video) },
-                                modifier               = Modifier.animateItem(
+                                onClick                 = { onVideoClick(video) },
+                                modifier = Modifier.animateItem(
                                     fadeInSpec  = spring(dampingRatio = 0.8f, stiffness = 380f),
                                     fadeOutSpec = spring(dampingRatio = 0.8f, stiffness = 380f),
                                 ),
@@ -187,12 +184,11 @@ private fun VideoCard(
             modifier = modifier
                 .aspectRatio(16f / 9f)
                 .sharedBounds(
-                    sharedContentState = rememberSharedContentState("video-card-${video.id}"),
+                    sharedContentState      = rememberSharedContentState("video-card-${video.id}"),
                     animatedVisibilityScope = animatedVisibilityScope,
                     boundsTransform = { _, _ ->
                         spring(dampingRatio = 0.8f, stiffness = 380f)
                     },
-                    ),
                 )
                 .clip(ThumbShape)
                 .clickable(onClick = onClick),

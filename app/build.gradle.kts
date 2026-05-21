@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.darsma.glassgallery"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.darsma.glassgallery"
         minSdk = 31
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -54,7 +54,7 @@ dependencies {
     implementation(libs.navigation.compose)
     implementation(libs.graphics.shapes)
     implementation(libs.media3.exoplayer)
-    implementation(libs.media3.ui.compose)
+    implementation(libs.media3.ui)
     implementation(libs.coil.compose)
     implementation(libs.coil.video)
     debugImplementation(libs.compose.ui.tooling)

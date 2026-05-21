@@ -44,11 +44,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.compose.PlayerSurface
-import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
+import androidx.media3.ui.PlayerView
 import com.darsma.glassgallery.data.MediaStoreVideoSource
 import com.darsma.glassgallery.data.Video
 import com.darsma.glassgallery.ui.components.MorphShape
@@ -115,10 +115,15 @@ fun PlayerScreen(
                     ),
                 ),
         ) {
-            PlayerSurface(
-                player      = player,
-                surfaceType = SURFACE_TYPE_SURFACE_VIEW,
-                modifier    = Modifier.fillMaxSize(),
+            // Video surface via AndroidView + PlayerView (useController=false)
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        this.player = player
+                        useController = false
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
             )
 
             // Top bar
@@ -150,9 +155,7 @@ fun PlayerScreen(
                         color    = Color.White,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 12.dp),
+                        modifier = Modifier.weight(1f).padding(end = 12.dp),
                     )
                 }
             }
@@ -172,16 +175,16 @@ fun PlayerScreen(
                 val progress   = (currentPosition.toFloat() / durationMs).coerceIn(0f, 1f)
 
                 Slider(
-                    value               = progress,
-                    onValueChange       = { fraction ->
-                        isSeeking       = true
+                    value = progress,
+                    onValueChange = { fraction ->
+                        isSeeking = true
                         currentPosition = (fraction * durationMs).toLong()
                     },
                     onValueChangeFinished = {
                         player.seekTo(currentPosition)
                         isSeeking = false
                     },
-                    colors   = SliderDefaults.colors(
+                    colors = SliderDefaults.colors(
                         thumbColor         = MaterialTheme.colorScheme.primary,
                         activeTrackColor   = MaterialTheme.colorScheme.primary,
                         inactiveTrackColor = Color.White.copy(alpha = 0.30f),

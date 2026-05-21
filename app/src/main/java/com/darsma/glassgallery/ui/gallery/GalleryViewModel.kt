@@ -27,11 +27,26 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private val _currentVideo = MutableStateFlow<Video?>(null)
     val currentVideo: StateFlow<Video?> = _currentVideo.asStateFlow()
 
-    fun onPermissionGranted() { loadVideos() }
+    // 0f–1f playback progress — updated by PlayerScreen via callback
+    private val _currentProgress = MutableStateFlow(0f)
+    val currentProgress: StateFlow<Float> = _currentProgress.asStateFlow()
 
+    private val _currentIsPlaying = MutableStateFlow(false)
+    val currentIsPlaying: StateFlow<Boolean> = _currentIsPlaying.asStateFlow()
+
+    fun onPermissionGranted() { loadVideos() }
     fun onPermissionDenied()  { _uiState.value = GalleryUiState.PermissionRequired }
 
-    fun selectVideo(video: Video) { _currentVideo.value = video }
+    fun selectVideo(video: Video) {
+        _currentVideo.value    = video
+        _currentProgress.value = 0f
+        _currentIsPlaying.value = false
+    }
+
+    fun updatePlaybackState(progress: Float, isPlaying: Boolean) {
+        _currentProgress.value  = progress
+        _currentIsPlaying.value = isPlaying
+    }
 
     private fun loadVideos() {
         viewModelScope.launch {

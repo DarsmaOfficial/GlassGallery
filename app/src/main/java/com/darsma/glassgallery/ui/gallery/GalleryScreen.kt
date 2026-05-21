@@ -17,18 +17,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +58,9 @@ import com.darsma.glassgallery.ui.components.liquidGlass
 
 private val ThumbShape = RoundedCornerShape(16.dp)
 
+// Height MiniPlayer takes including its vertical padding (8dp top + 8dp bottom + 72dp card)
+private val MINI_PLAYER_HEIGHT = 88.dp
+
 @Composable
 fun GalleryScreen(
     viewModel: GalleryViewModel,
@@ -65,8 +70,11 @@ fun GalleryScreen(
     onMiniPlayerClick: () -> Unit,
 ) {
     val context      = LocalContext.current
-    val uiState      by viewModel.uiState.collectAsState()
-    val currentVideo by viewModel.currentVideo.collectAsState()
+    val uiState          by viewModel.uiState.collectAsState()
+    val currentVideo     by viewModel.currentVideo.collectAsState()
+    val currentProgress  by viewModel.currentProgress.collectAsState()
+    val currentIsPlaying by viewModel.currentIsPlaying.collectAsState()
+    val hasMiniPlayer = currentVideo != null
 
     val permission = if (Build.VERSION.SDK_INT >= 33)
         Manifest.permission.READ_MEDIA_VIDEO
@@ -88,23 +96,19 @@ fun GalleryScreen(
         if (hasPermission) viewModel.onPermissionGranted() else permLauncher.launch(permission)
     }
 
-    Scaffold(
-        modifier       = Modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background,
-        bottomBar      = {
-            MiniPlayer(
-                video                   = currentVideo,
-                isPlaying               = false,
-                onPlayPause             = {},
-                onClick                 = onMiniPlayerClick,
-                sharedTransitionScope   = sharedTransitionScope,
-                animatedVisibilityScope = animatedVisibilityScope,
-            )
-        },
-    ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues)) {
-
-            // ── Glass header ──────────────────────────────────────────────
+    // Root Box — no Scaffold, so we control MiniPlayer position precisely.
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        // ── Main content column ───────────────────────────────────────────
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+        ) {
+            // Glass header
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -151,7 +155,13 @@ fun GalleryScreen(
                     LazyVerticalGrid(
                         columns               = GridCells.Adaptive(128.dp),
                         modifier              = Modifier.fillMaxSize(),
-                        contentPadding        = PaddingValues(8.dp),
+                        contentPadding        = PaddingValues(
+                            start  = 8.dp,
+                            end    = 8.dp,
+                            top    = 8.dp,
+                            // Extra bottom padding so last row isn't hidden under MiniPlayer
+                            bottom = if (hasMiniPlayer) MINI_PLAYER_HEIGHT + 16.dp else 16.dp,
+                        ),
                         verticalArrangement   = Arrangement.spacedBy(6.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
@@ -171,6 +181,22 @@ fun GalleryScreen(
                 }
             }
         }
+
+        // ── MiniPlayer — anchored at the BOTTOM of the screen ────────────
+        // Placed as a direct child of the root Box so Scaffold layout
+        // measurement can never push it to the wrong position.
+        MiniPlayer(
+            video                   = currentVideo,
+            isPlaying               = currentIsPlaying,
+            progress                = currentProgress,
+            onPlayPause             = {},
+            onClick                 = onMiniPlayerClick,
+            sharedTransitionScope   = sharedTransitionScope,
+            animatedVisibilityScope = animatedVisibilityScope,
+            modifier                = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding(),
+        )
     }
 }
 
@@ -186,7 +212,6 @@ private fun VideoCard(
         Box(
             modifier = modifier
                 .aspectRatio(16f / 9f)
-                // Same key as PlayerScreen video surface → thumbnail morphs into player
                 .sharedBounds(
                     sharedContentState      = rememberSharedContentState("video-surface-${video.id}"),
                     animatedVisibilityScope = animatedVisibilityScope,

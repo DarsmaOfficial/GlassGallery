@@ -17,11 +17,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -48,15 +48,17 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.darsma.glassgallery.data.Video
 
-private val CapsuleShape = RoundedCornerShape(50)
+private val CapsuleShape = RoundedCornerShape(22.dp)
 
 @Composable
 fun MiniPlayer(
     video: Video?,
     isPlaying: Boolean,
+    progress: Float,               // 0f–1f playback progress for the mini bar
     onPlayPause: () -> Unit,
     onClick: () -> Unit,
     sharedTransitionScope: SharedTransitionScope,
@@ -68,32 +70,29 @@ fun MiniPlayer(
         enter = slideInVertically(
             initialOffsetY = { it },
             animationSpec  = spring(dampingRatio = 0.75f, stiffness = 360f),
-        ) + fadeIn(animationSpec = spring(stiffness = Spring.StiffnessLow)),
+        ) + fadeIn(spring(stiffness = Spring.StiffnessLow)),
         exit = slideOutVertically(
             targetOffsetY = { it },
             animationSpec = spring(dampingRatio = 0.75f, stiffness = 360f),
         ) + fadeOut(),
-        modifier = modifier,
+        modifier = modifier.fillMaxWidth(),
     ) {
         video ?: return@AnimatedVisibility
 
         val interaction = remember { MutableInteractionSource() }
         val pressed by interaction.collectIsPressedAsState()
-        val scale by animateFloatAsState(
-            targetValue   = if (pressed) 0.96f else 1f,
+        val capsuleScale by animateFloatAsState(
+            targetValue   = if (pressed) 0.97f else 1f,
             animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
-            label         = "miniplayer-scale",
+            label         = "capsule-scale",
         )
 
         with(sharedTransitionScope) {
-            // ── The sharedBounds key MATCHES the PlayerScreen video surface key.
-            // When the user presses Back the full player shrinks directly
-            // into this capsule (and vice-versa when tapping it to reopen).
             Box(
                 modifier = Modifier
-                    .padding(horizontal = 18.dp, vertical = 10.dp)
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
                     .fillMaxWidth()
-                    .height(68.dp)
+                    .height(72.dp)
                     .sharedBounds(
                         sharedContentState      = rememberSharedContentState(
                             key = "video-surface-${video.id}"
@@ -103,13 +102,15 @@ fun MiniPlayer(
                             spring(dampingRatio = 0.82f, stiffness = 340f)
                         },
                     )
-                    .scale(scale)
+                    .scale(capsuleScale)
                     .clip(CapsuleShape)
+                    // Rich gradient background
                     .background(
-                        brush = Brush.linearGradient(
+                        Brush.horizontalGradient(
                             colors = listOf(
-                                Color(0xFF2A2050),
-                                Color(0xFF1A1535),
+                                Color(0xFF1E1540),
+                                Color(0xFF251C4A),
+                                Color(0xFF1E1540),
                             )
                         )
                     )
@@ -120,15 +121,24 @@ fun MiniPlayer(
                     ),
             ) {
                 Row(
-                    modifier         = Modifier.fillMaxSize(),
+                    modifier          = Modifier
+                        .fillMaxSize()
+                        .padding(end = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // ── Thumbnail
+                    // ── Thumbnail ─────────────────────────────────────────
                     Box(
                         modifier = Modifier
-                            .fillMaxHeight()
-                            .aspectRatio(16f / 9f)
-                            .clip(RoundedCornerShape(topStart = 50.dp, bottomStart = 50.dp)),
+                            .width(100.dp)
+                            .height(72.dp)
+                            .clip(
+                                RoundedCornerShape(
+                                    topStart     = 22.dp,
+                                    bottomStart  = 22.dp,
+                                    topEnd       = 0.dp,
+                                    bottomEnd    = 0.dp,
+                                )
+                            ),
                     ) {
                         AsyncImage(
                             model              = video.thumbnailUri,
@@ -136,36 +146,62 @@ fun MiniPlayer(
                             contentScale       = ContentScale.Crop,
                             modifier           = Modifier.fillMaxSize(),
                         )
-                        // dim scrim
+                        // gradient fade into card body
                         Box(
-                            Modifier
+                            modifier = Modifier
                                 .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.28f))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            Color(0x881E1540),
+                                        )
+                                    )
+                                )
                         )
                     }
 
                     Spacer(Modifier.width(12.dp))
 
-                    // ── Title
-                    Text(
-                        text       = video.title,
-                        style      = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color      = Color.White,
-                        maxLines   = 1,
-                        overflow   = TextOverflow.Ellipsis,
-                        modifier   = Modifier.weight(1f),
-                    )
+                    // ── Title + sub-row ───────────────────────────────────
+                    Column(
+                        modifier         = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            text       = video.title,
+                            style      = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color      = Color.White,
+                            maxLines   = 1,
+                            overflow   = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text  = "Now Playing",
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.45f),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        // Mini progress bar
+                        MiniProgressBar(progress = progress)
+                    }
 
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(10.dp))
 
-                    // ── Play / Pause button
+                    // ── Play / Pause ──────────────────────────────────────
                     Box(
                         modifier = Modifier
-                            .padding(end = 10.dp)
-                            .size(42.dp)
+                            .size(44.dp)
                             .clip(RoundedCornerShape(50))
-                            .background(Color.White.copy(alpha = 0.15f))
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
+                                    )
+                                )
+                            )
                             .clickable(onClick = onPlayPause),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -173,11 +209,42 @@ fun MiniPlayer(
                             imageVector        = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                             contentDescription = null,
                             tint               = Color.White,
-                            modifier           = Modifier.size(24.dp),
+                            modifier           = Modifier.size(26.dp),
                         )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MiniProgressBar(progress: Float) {
+    val animatedProgress by animateFloatAsState(
+        targetValue   = progress.coerceIn(0f, 1f),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+        label         = "mini-progress",
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(3.dp)
+            .clip(RoundedCornerShape(50))
+            .background(Color.White.copy(alpha = 0.15f)),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(animatedProgress)
+                .height(3.dp)
+                .clip(RoundedCornerShape(50))
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.primary,
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        )
+                    )
+                )
+        )
     }
 }

@@ -75,6 +75,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.darsma.glassgallery.data.MediaStoreVideoSource
+import com.darsma.glassgallery.ui.gallery.GalleryViewModel
 import com.darsma.glassgallery.data.Video
 import com.darsma.glassgallery.ui.components.SmoothSeekBar
 import com.darsma.glassgallery.ui.components.liquidGlass
@@ -96,6 +97,7 @@ private fun Float.label(): String = when (this) {
 @Composable
 fun PlayerScreen(
     videoId: Long,
+    galleryViewModel: GalleryViewModel,
     animatedVisibilityScope: AnimatedVisibilityScope,
     sharedTransitionScope: SharedTransitionScope,
     onBack: () -> Unit,
@@ -143,6 +145,12 @@ fun PlayerScreen(
         while (true) {
             if (!isSeeking) currentPosition = player.currentPosition
             duration = if (player.duration != C.TIME_UNSET) player.duration else 0L
+            // Push state to ViewModel so MiniPlayer progress bar stays accurate
+            val dur = if (player.duration != C.TIME_UNSET) player.duration.coerceAtLeast(1L) else 1L
+            galleryViewModel.updatePlaybackState(
+                progress  = (player.currentPosition.toFloat() / dur).coerceIn(0f, 1f),
+                isPlaying = player.isPlaying,
+            )
             delay(60L)
         }
     }

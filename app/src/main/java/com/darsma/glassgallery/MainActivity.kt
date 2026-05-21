@@ -8,9 +8,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -39,18 +36,13 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun GlassGalleryNavHost() {
-    val navController = rememberNavController()
+    val navController    = rememberNavController()
     val galleryViewModel: GalleryViewModel = viewModel()
 
     SharedTransitionLayout {
         NavHost(
-            navController    = navController,
+            navController  = navController,
             startDestination = "gallery",
-            // Gentle cross-fade; the shared element carries the visual motion.
-            enterTransition = { fadeIn(spring(stiffness = 200f)) },
-            exitTransition  = { fadeOut(spring(stiffness = 200f)) },
-            popEnterTransition = { fadeIn(spring(stiffness = 200f)) },
-            popExitTransition  = { fadeOut(spring(stiffness = 200f)) },
         ) {
             composable("gallery") {
                 GalleryScreen(
@@ -65,19 +57,20 @@ private fun GlassGalleryNavHost() {
                         galleryViewModel.currentVideo.value?.id?.let { id ->
                             navController.navigate("player/$id")
                         }
-                    }
+                    },
                 )
             }
             composable(
                 route     = "player/{videoId}",
-                arguments = listOf(navArgument("videoId") { type = NavType.LongType })
+                arguments = listOf(navArgument("videoId") { type = NavType.LongType }),
             ) { backStackEntry ->
                 val videoId = backStackEntry.arguments?.getLong("videoId") ?: return@composable
                 PlayerScreen(
                     videoId                 = videoId,
+                    galleryViewModel        = galleryViewModel,
                     animatedVisibilityScope = this,
                     sharedTransitionScope   = this@SharedTransitionLayout,
-                    onBack                  = { navController.popBackStack() }
+                    onBack                  = { navController.popBackStack() },
                 )
             }
         }

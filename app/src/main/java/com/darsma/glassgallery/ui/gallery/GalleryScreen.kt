@@ -10,9 +10,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,11 +44,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -53,7 +59,7 @@ import com.darsma.glassgallery.data.Video
 import com.darsma.glassgallery.ui.components.MiniPlayer
 import com.darsma.glassgallery.ui.components.liquidGlass
 
-private val ThumbShape = RoundedCornerShape(14.dp)
+private val ThumbShape = RoundedCornerShape(18.dp)
 
 @Composable
 fun GalleryScreen(
@@ -105,15 +111,16 @@ fun GalleryScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(64.dp)
+                    .height(72.dp)
                     .liquidGlass(alpha = 0.40f),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Text(
-                    text     = stringResource(R.string.app_name),
-                    style    = MaterialTheme.typography.headlineSmall,
-                    color    = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = 20.dp),
+                    text       = stringResource(R.string.app_name),
+                    style      = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color      = MaterialTheme.colorScheme.onSurface,
+                    modifier   = Modifier.padding(horizontal = 24.dp),
                 )
             }
 
@@ -145,11 +152,11 @@ fun GalleryScreen(
 
                 is GalleryUiState.Success -> with(sharedTransitionScope) {
                     LazyVerticalGrid(
-                        columns               = GridCells.Adaptive(128.dp),
+                        columns               = GridCells.Adaptive(150.dp),
                         modifier              = Modifier.fillMaxSize(),
-                        contentPadding        = PaddingValues(8.dp),
-                        verticalArrangement   = Arrangement.spacedBy(6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        contentPadding        = PaddingValues(10.dp),
+                        verticalArrangement   = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         items(state.videos, key = { it.id }) { video ->
                             VideoCard(
@@ -158,8 +165,12 @@ fun GalleryScreen(
                                 animatedVisibilityScope = animatedVisibilityScope,
                                 onClick                 = { onVideoClick(video) },
                                 modifier = Modifier.animateItem(
-                                    fadeInSpec  = spring(dampingRatio = 0.8f, stiffness = 380f),
-                                    fadeOutSpec = spring(dampingRatio = 0.8f, stiffness = 380f),
+                                    fadeInSpec  = spring(stiffness = Spring.StiffnessMediumLow),
+                                    fadeOutSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                                    placementSpec = spring(
+                                        dampingRatio = 0.75f,
+                                        stiffness    = Spring.StiffnessMediumLow,
+                                    ),
                                 ),
                             )
                         }
@@ -178,19 +189,35 @@ private fun VideoCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    // Springy press feedback.
+    val cardScale by animateFloatAsState(
+        targetValue   = if (pressed) 0.94f else 1f,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium),
+        label = "card-press",
+    )
+
     with(sharedTransitionScope) {
         Box(
             modifier = modifier
+                .scale(cardScale)
                 .aspectRatio(16f / 9f)
+                // The video frame itself is the shared element that morphs
+                // into the full-screen player surface.
                 .sharedBounds(
-                    sharedContentState      = rememberSharedContentState("video-card-${video.id}"),
+                    sharedContentState      = rememberSharedContentState("video-surface-${video.id}"),
                     animatedVisibilityScope = animatedVisibilityScope,
                     boundsTransform = { _, _ ->
-                        spring(dampingRatio = 0.8f, stiffness = 380f)
+                        spring(dampingRatio = 0.82f, stiffness = 340f)
                     },
                 )
                 .clip(ThumbShape)
-                .clickable(onClick = onClick),
+                .clickable(
+                    interactionSource = interaction,
+                    indication        = null,
+                    onClick           = onClick,
+                ),
         ) {
             AsyncImage(
                 model              = video.thumbnailUri,
@@ -202,18 +229,18 @@ private fun VideoCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .height(44.dp)
+                    .height(52.dp)
                     .background(
                         Brush.verticalGradient(
-                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f))
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f))
                         )
                     )
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
                 contentAlignment = Alignment.BottomStart,
             ) {
                 Text(
                     text     = video.title,
-                    style    = MaterialTheme.typography.labelSmall,
+                    style    = MaterialTheme.typography.labelMedium,
                     color    = Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

@@ -207,16 +207,17 @@ fun PlayerScreen(
                 .fillMaxSize()
                 .graphicsLayer {
                     // Live predictive-back transform: the whole player shrinks
-                    // slightly, fades, and rounds its corners as the user swipes,
-                    // previewing the return to the grid.
+                    // slightly and fades as the user swipes, previewing the
+                    // return to the grid. Corner rounding only kicks in mid-swipe.
                     val p = backProgress.value
                     val s = 1f - 0.16f * p
                     scaleX = s
                     scaleY = s
                     alpha  = 1f - 0.30f * p
-                    val r  = 48f * p
-                    shape  = androidx.compose.foundation.shape.RoundedCornerShape(r)
-                    clip   = p > 0f
+                    if (p > 0.001f) {
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(48f * p)
+                        clip  = true
+                    }
                 }
                 .background(Color.Black),
         ) {

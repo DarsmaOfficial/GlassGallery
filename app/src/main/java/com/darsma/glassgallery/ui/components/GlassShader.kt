@@ -35,10 +35,14 @@ object GlassShader {
  */
 @Language("AGSL")
 private const val SHEEN_AGSL = """
+uniform shader contents;
 uniform float2 size;
 uniform float  time;
 
 half4 main(float2 coord) {
+    // Always start from the surface's own rendered pixels.
+    half4 src = contents.eval(coord);
+
     float2 uv = coord / size;
     // A diagonal coordinate that the band sweeps along.
     float diag = (uv.x + uv.y) * 0.5;
@@ -48,8 +52,10 @@ half4 main(float2 coord) {
     d = min(d, 1.0 - d);
     // Soft falloff — a gentle highlight, never a hard line.
     float band = smoothstep(0.16, 0.0, d);
-    float alpha = band * 0.10;
-    return half4(alpha, alpha, alpha, alpha);
+    // Add the sheen on top, scaled by the source alpha so it only lights
+    // up where the surface is actually drawn.
+    float add = band * 0.12 * src.a;
+    return half4(src.rgb + add, src.a);
 }
 """
 
@@ -80,11 +86,14 @@ private fun Modifier.sheen33(): Modifier {
     }
 
     return this.graphicsLayer {
-        shader.setFloatUniform("size", size.width, size.height)
-        shader.setFloatUniform("time", time)
-        renderEffect = RenderEffect
-            .createRuntimeShaderEffect(shader, "contents")
-            .asComposeRenderEffect()
+        if (size.width <= 0f || size.height <= 0f) return@graphicsLayer
+        runCatching {
+            shader.setFloatUniform("size", size.width, size.height)
+            shader.setFloatUniform("time", time)
+            renderEffect = RenderEffect
+                .createRuntimeShaderEffect(shader, "contents")
+                .asComposeRenderEffect()
+        }
     }
 }
 
@@ -98,9 +107,11 @@ private fun Modifier.sheen33(): Modifier {
 fun Modifier.frostedBlur(radius: Float = 24f): Modifier {
     if (!GlassShader.supported) return this
     return this.graphicsLayer {
-        renderEffect = RenderEffect
-            .createBlurEffect(radius, radius, Shader.TileMode.CLAMP)
-            .asComposeRenderEffect()
+        runCatching {
+            renderEffect = RenderEffect
+                .createBlurEffect(radius, radius, Shader.TileMode.CLAMP)
+                .asComposeRenderEffect()
+        }
     }
 }
 
@@ -153,11 +164,14 @@ private fun Modifier.rippleEffect33(
 ): Modifier {
     val shader = remember { RuntimeShader(RIPPLE_AGSL) }
     return this.graphicsLayer {
-        shader.setFloatUniform("size", size.width, size.height)
-        shader.setFloatUniform("center", centerX, centerY)
-        shader.setFloatUniform("progress", progress)
-        renderEffect = RenderEffect
-            .createRuntimeShaderEffect(shader, "contents")
-            .asComposeRenderEffect()
+        if (size.width <= 0f || size.height <= 0f) return@graphicsLayer
+        runCatching {
+            shader.setFloatUniform("size", size.width, size.height)
+            shader.setFloatUniform("center", centerX, centerY)
+            shader.setFloatUniform("progress", progress)
+            renderEffect = RenderEffect
+                .createRuntimeShaderEffect(shader, "contents")
+                .asComposeRenderEffect()
+        }
     }
 }

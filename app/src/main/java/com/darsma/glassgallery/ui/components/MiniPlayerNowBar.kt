@@ -118,6 +118,7 @@ fun MiniPlayer(
                             )
                         )
                     )
+                    .glassSheen()
                     .clickable(
                         interactionSource = interaction,
                         indication        = null,

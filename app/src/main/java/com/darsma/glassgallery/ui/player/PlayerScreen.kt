@@ -19,6 +19,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -58,6 +59,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.Animatable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -81,11 +83,13 @@ import com.darsma.glassgallery.data.PlaybackStore
 import com.darsma.glassgallery.data.Video
 import com.darsma.glassgallery.ui.components.BouncyIconButton
 import com.darsma.glassgallery.ui.components.Motion
+import com.darsma.glassgallery.ui.components.glassSheen
 import com.darsma.glassgallery.ui.components.SmoothSeekBar
 import com.darsma.glassgallery.ui.components.liquidGlass
 import com.darsma.glassgallery.ui.components.pressBounce
 import com.darsma.glassgallery.ui.gallery.GalleryViewModel
 import kotlinx.coroutines.delay
+import kotlin.coroutines.cancellation.CancellationException
 
 private val ControlsShape = RoundedCornerShape(26.dp)
 private val ChipShape     = RoundedCornerShape(50)
@@ -155,6 +159,24 @@ fun PlayerScreen(
     var seekSide   by remember { mutableStateOf(SeekSide.NONE) }
     var seekAmount by remember { mutableIntStateOf(0) }
 
+    // Predictive-back progress: 0 = full player, 1 = fully "handed back" to grid.
+    val backProgress = remember { Animatable(0f) }
+
+    // As the user swipes back, shrink + fade the player toward the gallery.
+    // Releasing past the threshold completes the pop; cancelling springs home.
+    PredictiveBackHandler { progressFlow ->
+        try {
+            progressFlow.collect { backEvent ->
+                backProgress.snapTo(backEvent.progress)
+            }
+            // Flow completed normally → gesture committed.
+            onBack()
+        } catch (e: CancellationException) {
+            // Gesture cancelled → spring the player back to full size.
+            backProgress.animateTo(0f, animationSpec = Motion.expressive())
+        }
+    }
+
     LaunchedEffect(speed) {
         player.playbackParameters = PlaybackParameters(speed)
     }
@@ -183,6 +205,19 @@ fun PlayerScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer {
+                    // Live predictive-back transform: the whole player shrinks
+                    // slightly, fades, and rounds its corners as the user swipes,
+                    // previewing the return to the grid.
+                    val p = backProgress.value
+                    val s = 1f - 0.16f * p
+                    scaleX = s
+                    scaleY = s
+                    alpha  = 1f - 0.30f * p
+                    val r  = 48f * p
+                    shape  = androidx.compose.foundation.shape.RoundedCornerShape(r)
+                    clip   = p > 0f
+                }
                 .background(Color.Black),
         ) {
             // ── Video surface — morphs to/from the bottom MiniPlayer ──────
@@ -251,6 +286,7 @@ fun PlayerScreen(
                         .padding(horizontal = 14.dp, vertical = 10.dp)
                         .clip(ControlsShape)
                         .liquidGlass(alpha = 0.42f)
+                        .glassSheen()
                         .padding(horizontal = 6.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -322,6 +358,7 @@ fun PlayerScreen(
                         .padding(horizontal = 16.dp, vertical = 18.dp)
                         .clip(ControlsShape)
                         .liquidGlass(alpha = 0.50f)
+                        .glassSheen()
                         .padding(horizontal = 18.dp, vertical = 14.dp),
                 ) {
                     val durationMs = duration.coerceAtLeast(1L)

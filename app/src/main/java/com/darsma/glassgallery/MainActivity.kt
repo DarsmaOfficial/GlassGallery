@@ -8,6 +8,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -41,10 +48,29 @@ private fun GlassGalleryNavHost() {
 
     SharedTransitionLayout {
         NavHost(
-            navController  = navController,
+            navController    = navController,
             startDestination = "gallery",
         ) {
-            composable("gallery") {
+            // Gallery — gently scales + fades. When returning from the player
+            // (popEnter) it eases back up to full size; this pairs with the
+            // predictive-back gesture so the gallery "receives" the morph.
+            composable(
+                route = "gallery",
+                enterTransition     = {
+                    fadeIn(spring(stiffness = 300f))
+                },
+                exitTransition      = {
+                    scaleOut(targetScale = 0.92f, animationSpec = spring(stiffness = 300f)) +
+                        fadeOut(spring(stiffness = 400f))
+                },
+                popEnterTransition  = {
+                    scaleIn(initialScale = 0.92f, animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f)) +
+                        fadeIn(spring(stiffness = 300f))
+                },
+                popExitTransition   = {
+                    fadeOut(spring(stiffness = 400f))
+                },
+            ) {
                 GalleryScreen(
                     viewModel               = galleryViewModel,
                     animatedVisibilityScope = this,
@@ -60,9 +86,23 @@ private fun GlassGalleryNavHost() {
                     },
                 )
             }
+
+            // Player — rises from the bottom, and on back-press slides back down.
             composable(
                 route     = "player/{videoId}",
                 arguments = listOf(navArgument("videoId") { type = NavType.LongType }),
+                enterTransition     = {
+                    slideInVertically(
+                        initialOffsetY = { it / 6 },
+                        animationSpec  = spring(dampingRatio = 0.85f, stiffness = 300f),
+                    ) + fadeIn(spring(stiffness = 300f))
+                },
+                popExitTransition   = {
+                    slideOutVertically(
+                        targetOffsetY = { it / 5 },
+                        animationSpec = spring(dampingRatio = 0.9f, stiffness = 280f),
+                    ) + fadeOut(spring(stiffness = 400f))
+                },
             ) { backStackEntry ->
                 val videoId = backStackEntry.arguments?.getLong("videoId") ?: return@composable
                 PlayerScreen(

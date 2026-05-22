@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.darsma.glassgallery.data.SortOrder
 import com.darsma.glassgallery.ui.components.Motion
+import com.darsma.glassgallery.ui.components.glassSheen
 import com.darsma.glassgallery.ui.components.liquidGlassBorder
 import kotlinx.coroutines.delay
 
@@ -102,6 +103,7 @@ fun SortSheet(
                             colors = listOf(Color(0xFF221C3E), Color(0xFF161227)),
                         )
                     )
+                    .glassSheen()
                     .liquidGlassBorder(SheetShape)
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 18.dp),

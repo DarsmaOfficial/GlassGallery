@@ -41,6 +41,10 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private val _showFavoritesOnly = MutableStateFlow(false)
     val showFavoritesOnly: StateFlow<Boolean> = _showFavoritesOnly.asStateFlow()
 
+    /** Free-text search query applied to video titles. */
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
     private val _currentVideo = MutableStateFlow<Video?>(null)
     val currentVideo: StateFlow<Video?> = _currentVideo.asStateFlow()
 
@@ -92,6 +96,14 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         applyFilters()
     }
 
+    // ── Search ─────────────────────────────────────────────────────────────
+
+    fun setSearchQuery(query: String) {
+        if (query == _searchQuery.value) return
+        _searchQuery.value = query
+        applyFilters()
+    }
+
     // ── Internals ──────────────────────────────────────────────────────────
 
     private fun loadVideos() {
@@ -108,12 +120,14 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** Applies the favorites filter + current sort, then publishes Success. */
+    /** Applies search + favorites filter + current sort, then publishes Success. */
     private fun applyFilters() {
-        val filtered = if (_showFavoritesOnly.value)
-            rawVideos.filter { it.id in _favorites.value }
-        else
-            rawVideos
+        val query = _searchQuery.value.trim()
+        val filtered = rawVideos
+            .asSequence()
+            .filter { !_showFavoritesOnly.value || it.id in _favorites.value }
+            .filter { query.isEmpty() || it.title.contains(query, ignoreCase = true) }
+            .toList()
         _uiState.value = GalleryUiState.Success(filtered.sortedBy(_sortOrder.value))
     }
 }

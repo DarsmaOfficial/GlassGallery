@@ -44,6 +44,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -70,6 +71,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.darsma.glassgallery.R
 import com.darsma.glassgallery.data.Video
 import com.darsma.glassgallery.data.formatBytes
@@ -100,9 +103,11 @@ fun GalleryScreen(
     val sortOrder         by viewModel.sortOrder.collectAsState()
     val favorites         by viewModel.favorites.collectAsState()
     val favoritesOnly     by viewModel.showFavoritesOnly.collectAsState()
+    val searchQuery       by viewModel.searchQuery.collectAsState()
     val hasMiniPlayer = currentVideo != null
 
     var sortSheetVisible by remember { mutableStateOf(false) }
+    var searchExpanded   by remember { mutableStateOf(false) }
 
     val permission = if (Build.VERSION.SDK_INT >= 33)
         Manifest.permission.READ_MEDIA_VIDEO
@@ -154,8 +159,24 @@ fun GalleryScreen(
                 videoCount     = successState?.videos?.size ?: 0,
                 totalSizeBytes = successState?.videos?.sumOf { it.sizeBytes } ?: 0L,
                 favoritesOnly  = favoritesOnly,
+                searchActive   = searchExpanded,
                 onToggleFavs   = { viewModel.toggleFavoritesFilter() },
                 onOpenSort     = { sortSheetVisible = true },
+                onToggleSearch = {
+                    searchExpanded = !searchExpanded
+                    if (!searchExpanded) viewModel.setSearchQuery("")
+                },
+            )
+
+            GallerySearchBar(
+                expanded     = searchExpanded,
+                query        = searchQuery,
+                resultCount  = successState?.videos?.size ?: 0,
+                onQueryChange = { viewModel.setSearchQuery(it) },
+                onClose      = {
+                    searchExpanded = false
+                    viewModel.setSearchQuery("")
+                },
             )
 
             when (val state = uiState) {
@@ -263,8 +284,10 @@ private fun GalleryHeader(
     videoCount: Int,
     totalSizeBytes: Long,
     favoritesOnly: Boolean,
+    searchActive: Boolean,
     onToggleFavs: () -> Unit,
     onOpenSort: () -> Unit,
+    onToggleSearch: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -302,6 +325,26 @@ private fun GalleryHeader(
                 )
             }
         }
+
+        // Search toggle.
+        val searchTint by animateFloatAsState(
+            targetValue   = if (searchActive) 1f else 0f,
+            animationSpec = Motion.standard(),
+            label         = "search-tint",
+        )
+        BouncyIconButton(
+            onClick    = onToggleSearch,
+            size       = 44.dp,
+            background = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f + 0.22f * searchTint),
+        ) {
+            Icon(
+                imageVector        = Icons.Rounded.Search,
+                contentDescription = "Search videos",
+                tint               = if (searchActive) MaterialTheme.colorScheme.primary else Color.White,
+                modifier           = Modifier.size(21.dp),
+            )
+        }
+        Spacer(Modifier.width(8.dp))
 
         // Favorites filter toggle.
         val favTint by animateFloatAsState(
@@ -386,7 +429,10 @@ private fun VideoCard(
             ),
     ) {
         AsyncImage(
-            model              = video.thumbnailUri,
+            model              = ImageRequest.Builder(LocalContext.current)
+                .data(video.thumbnailUri)
+                .crossfade(280)
+                .build(),
             contentDescription = video.title,
             contentScale       = ContentScale.Crop,
             modifier           = Modifier.fillMaxSize(),

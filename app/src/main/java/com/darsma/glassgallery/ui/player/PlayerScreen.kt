@@ -19,6 +19,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,11 +57,13 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,6 +77,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.darsma.glassgallery.data.MediaStoreVideoSource
+import com.darsma.glassgallery.data.PlaybackStore
 import com.darsma.glassgallery.data.Video
 import com.darsma.glassgallery.ui.components.BouncyIconButton
 import com.darsma.glassgallery.ui.components.Motion
@@ -105,6 +109,7 @@ fun PlayerScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    val playbackStore = remember { PlaybackStore(context) }
 
     val video: Video? by produceState<Video?>(null, videoId) {
         value = MediaStoreVideoSource(context).loadVideoById(videoId)
@@ -121,10 +126,23 @@ fun PlayerScreen(
         ExoPlayer.Builder(context).build().also { p ->
             p.setMediaItem(MediaItem.fromUri(videoUri))
             p.prepare()
+            // Resume exactly where the user left off last time.
+            val resumeAt = playbackStore.getPosition(videoId)
+            if (resumeAt > 0L) p.seekTo(resumeAt)
             p.playWhenReady = true
         }
     }
-    DisposableEffect(player) { onDispose { player.release() } }
+    // Persist position when leaving the screen.
+    DisposableEffect(player) {
+        onDispose {
+            playbackStore.savePosition(
+                videoId    = videoId,
+                positionMs = player.currentPosition,
+                durationMs = player.duration.takeIf { it != C.TIME_UNSET } ?: 0L,
+            )
+            player.release()
+        }
+    }
 
     var isPlaying       by remember { mutableStateOf(player.isPlaying) }
     var currentPosition by remember { mutableLongStateOf(0L) }
@@ -132,6 +150,10 @@ fun PlayerScreen(
     var isSeeking       by remember { mutableStateOf(false) }
     var seekPreview     by remember { mutableLongStateOf(0L) }
     var speed           by rememberSaveable { mutableFloatStateOf(1.0f) }
+
+    // Double-tap-to-seek feedback state.
+    var seekSide   by remember { mutableStateOf(SeekSide.NONE) }
+    var seekAmount by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(speed) {
         player.playbackParameters = PlaybackParameters(speed)
@@ -171,7 +193,24 @@ fun PlayerScreen(
                         sharedContentState      = rememberSharedContentState("video-surface-$videoId"),
                         animatedVisibilityScope = animatedVisibilityScope,
                         boundsTransform         = { _, _ -> Motion.expressive() },
-                    ),
+                    )
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onDoubleTap = { offset ->
+                                val forward = offset.x > size.width / 2f
+                                val step    = 10_000L
+                                val target  = if (forward)
+                                    (player.currentPosition + step)
+                                        .coerceAtMost(player.duration.coerceAtLeast(0L))
+                                else
+                                    (player.currentPosition - step).coerceAtLeast(0L)
+                                player.seekTo(target)
+                                currentPosition = target
+                                seekAmount = 10
+                                seekSide   = if (forward) SeekSide.FORWARD else SeekSide.BACKWARD
+                            },
+                        )
+                    },
             ) {
                 AndroidView(
                     factory = { ctx ->
@@ -183,6 +222,19 @@ fun PlayerScreen(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+
+            // Double-tap seek flourish — auto-clears after a beat.
+            LaunchedEffect(seekSide, seekAmount) {
+                if (seekSide != SeekSide.NONE) {
+                    delay(620L)
+                    seekSide = SeekSide.NONE
+                }
+            }
+            SeekRippleOverlay(
+                side     = seekSide,
+                seconds  = seekAmount,
+                modifier = Modifier.fillMaxSize(),
+            )
 
             // ── Top bar ───────────────────────────────────────────────────
             AnimatedVisibility(

@@ -46,11 +46,14 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.darsma.glassgallery.data.Video
 
 private val CapsuleShape = RoundedCornerShape(24.dp)
@@ -142,7 +145,10 @@ fun MiniPlayer(
                             ),
                     ) {
                         AsyncImage(
-                            model              = video.thumbnailUri,
+                            model              = ImageRequest.Builder(LocalContext.current)
+                .data(video.thumbnailUri)
+                .crossfade(280)
+                .build(),
                             contentDescription = null,
                             contentScale       = ContentScale.Crop,
                             modifier           = Modifier.fillMaxSize(),

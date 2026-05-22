@@ -61,8 +61,10 @@ fun Modifier.pressBounce(
     interactionSource: MutableInteractionSource,
     pressedScale: Float = 0.90f,
     spec: AnimationSpec<Float> = Motion.standard(),
+    haptic: Boolean = true,
 ): Modifier {
     val pressed by interactionSource.collectIsPressedAsState()
+    if (haptic) interactionSource.hapticPress()
     val scale by animateFloatAsState(
         targetValue   = if (pressed) pressedScale else 1f,
         animationSpec = spec,

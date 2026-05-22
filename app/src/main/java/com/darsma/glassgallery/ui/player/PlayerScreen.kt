@@ -10,9 +10,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -23,7 +20,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -38,16 +35,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -59,12 +59,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -75,15 +74,18 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.darsma.glassgallery.data.MediaStoreVideoSource
-import com.darsma.glassgallery.ui.gallery.GalleryViewModel
 import com.darsma.glassgallery.data.Video
+import com.darsma.glassgallery.ui.components.BouncyIconButton
+import com.darsma.glassgallery.ui.components.Motion
 import com.darsma.glassgallery.ui.components.SmoothSeekBar
 import com.darsma.glassgallery.ui.components.liquidGlass
+import com.darsma.glassgallery.ui.components.pressBounce
+import com.darsma.glassgallery.ui.gallery.GalleryViewModel
 import kotlinx.coroutines.delay
 
 private val ControlsShape = RoundedCornerShape(26.dp)
+private val ChipShape     = RoundedCornerShape(50)
 
-// Available playback speeds cycling order
 private val SPEED_STEPS = listOf(0.5f, 1.0f, 1.25f, 1.5f, 2.0f)
 private fun Float.label(): String = when (this) {
     0.5f  -> "0.5×"
@@ -108,6 +110,9 @@ fun PlayerScreen(
         value = MediaStoreVideoSource(context).loadVideoById(videoId)
     }
 
+    val favorites by galleryViewModel.favorites.collectAsState()
+    val isFavorite = videoId in favorites
+
     val videoUri = remember(videoId) {
         ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, videoId)
     }
@@ -119,7 +124,6 @@ fun PlayerScreen(
             p.playWhenReady = true
         }
     }
-
     DisposableEffect(player) { onDispose { player.release() } }
 
     var isPlaying       by remember { mutableStateOf(player.isPlaying) }
@@ -127,16 +131,12 @@ fun PlayerScreen(
     var duration        by remember { mutableLongStateOf(0L) }
     var isSeeking       by remember { mutableStateOf(false) }
     var seekPreview     by remember { mutableLongStateOf(0L) }
+    var speed           by rememberSaveable { mutableFloatStateOf(1.0f) }
 
-    // Speed — persists across config changes
-    var speed by rememberSaveable { mutableFloatStateOf(1.0f) }
-
-    // Apply speed whenever it changes
     LaunchedEffect(speed) {
         player.playbackParameters = PlaybackParameters(speed)
     }
 
-    // Listener for instant play/pause + progress polling at 60 fps intervals
     LaunchedEffect(player) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
@@ -145,7 +145,6 @@ fun PlayerScreen(
         while (true) {
             if (!isSeeking) currentPosition = player.currentPosition
             duration = if (player.duration != C.TIME_UNSET) player.duration else 0L
-            // Push state to ViewModel so MiniPlayer progress bar stays accurate
             val dur = if (player.duration != C.TIME_UNSET) player.duration.coerceAtLeast(1L) else 1L
             galleryViewModel.updatePlaybackState(
                 progress  = (player.currentPosition.toFloat() / dur).coerceIn(0f, 1f),
@@ -155,9 +154,8 @@ fun PlayerScreen(
         }
     }
 
-    // Controls animate in shortly after morph settles
     var controlsVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { delay(200L); controlsVisible = true }
+    LaunchedEffect(Unit) { delay(220L); controlsVisible = true }
 
     with(sharedTransitionScope) {
         Box(
@@ -165,18 +163,14 @@ fun PlayerScreen(
                 .fillMaxSize()
                 .background(Color.Black),
         ) {
-            // ── Video surface ─────────────────────────────────────────────
-            // Key matches gallery VideoCard AND MiniPlayer capsule so that
-            // tapping a thumbnail OR re-opening from MiniPlayer both morph correctly.
+            // ── Video surface — morphs to/from the bottom MiniPlayer ──────
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .sharedBounds(
                         sharedContentState      = rememberSharedContentState("video-surface-$videoId"),
                         animatedVisibilityScope = animatedVisibilityScope,
-                        boundsTransform = { _, _ ->
-                            spring(dampingRatio = 0.82f, stiffness = 340f)
-                        },
+                        boundsTransform         = { _, _ -> Motion.expressive() },
                     ),
             ) {
                 AndroidView(
@@ -193,9 +187,9 @@ fun PlayerScreen(
             // ── Top bar ───────────────────────────────────────────────────
             AnimatedVisibility(
                 visible  = controlsVisible,
-                enter    = slideInVertically(initialOffsetY = { -it }, animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f)) +
-                           fadeIn(spring(stiffness = Spring.StiffnessLow)),
-                exit     = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+                enter    = slideInVertically(initialOffsetY = { -it }, animationSpec = Motion.expressive()) +
+                           fadeIn(Motion.standard()),
+                exit     = slideOutVertically(targetOffsetY = { -it }, animationSpec = Motion.standard()) + fadeOut(),
                 modifier = Modifier.align(Alignment.TopStart),
             ) {
                 Row(
@@ -208,26 +202,47 @@ fun PlayerScreen(
                         .padding(horizontal = 6.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // Back
-                    GlassIconButton(onClick = onBack, size = 46.dp) {
-                        Icon(Icons.Filled.ArrowBack, "Back", tint = Color.White)
+                    BouncyIconButton(onClick = onBack, size = 46.dp) {
+                        Icon(Icons.Rounded.ArrowBack, "Back", tint = Color.White)
                     }
                     Spacer(Modifier.width(4.dp))
-                    // Title
-                    Text(
-                        text       = video?.title ?: "",
-                        style      = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium,
-                        color      = Color.White,
-                        maxLines   = 1,
-                        overflow   = TextOverflow.Ellipsis,
-                        modifier   = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp),
+                    ) {
+                        Text(
+                            text       = video?.title ?: "",
+                            style      = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color      = Color.White,
+                            maxLines   = 1,
+                            overflow   = TextOverflow.Ellipsis,
+                        )
+                        // File size — appears the moment metadata resolves.
+                        AnimatedVisibility(
+                            visible = video != null,
+                            enter   = fadeIn(Motion.standard()),
+                            exit    = fadeOut(),
+                        ) {
+                            Text(
+                                text     = video?.readableSize ?: "",
+                                fontSize = 11.sp,
+                                color    = Color.White.copy(alpha = 0.55f),
+                            )
+                        }
+                    }
+                    // Favorite.
+                    FavoriteButton(
+                        isFavorite = isFavorite,
+                        onToggle   = { galleryViewModel.toggleFavorite(videoId) },
                     )
-                    // Share
-                    GlassIconButton(
+                    Spacer(Modifier.width(2.dp))
+                    // Share.
+                    BouncyIconButton(
                         onClick = {
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type  = "video/*"
+                                type = "video/*"
                                 putExtra(Intent.EXTRA_STREAM, videoUri)
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
@@ -235,7 +250,7 @@ fun PlayerScreen(
                         },
                         size = 46.dp,
                     ) {
-                        Icon(Icons.Filled.Share, "Share", tint = Color.White)
+                        Icon(Icons.Rounded.Share, "Share", tint = Color.White)
                     }
                 }
             }
@@ -243,9 +258,9 @@ fun PlayerScreen(
             // ── Bottom controls ───────────────────────────────────────────
             AnimatedVisibility(
                 visible  = controlsVisible,
-                enter    = slideInVertically(initialOffsetY = { it }, animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f)) +
-                           fadeIn(spring(stiffness = Spring.StiffnessLow)),
-                exit     = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                enter    = slideInVertically(initialOffsetY = { it }, animationSpec = Motion.expressive()) +
+                           fadeIn(Motion.standard()),
+                exit     = slideOutVertically(targetOffsetY = { it }, animationSpec = Motion.standard()) + fadeOut(),
                 modifier = Modifier.align(Alignment.BottomStart),
             ) {
                 Column(
@@ -255,7 +270,7 @@ fun PlayerScreen(
                         .padding(horizontal = 16.dp, vertical = 18.dp)
                         .clip(ControlsShape)
                         .liquidGlass(alpha = 0.50f)
-                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                        .padding(horizontal = 18.dp, vertical = 14.dp),
                 ) {
                     val durationMs = duration.coerceAtLeast(1L)
                     val livePos    = if (isSeeking) seekPreview else currentPosition
@@ -274,25 +289,20 @@ fun PlayerScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
 
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(8.dp))
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Elapsed time
                         Text(
                             text  = livePos.formatMs(),
                             style = MaterialTheme.typography.labelMedium,
                             color = Color.White,
                         )
                         Spacer(Modifier.weight(1f))
-
-                        // Play / Pause
                         PlayPauseButton(
                             isPlaying = isPlaying,
                             onClick   = { if (player.isPlaying) player.pause() else player.play() },
                         )
-
                         Spacer(Modifier.weight(1f))
-                        // Duration
                         Text(
                             text  = durationMs.formatMs(),
                             style = MaterialTheme.typography.labelMedium,
@@ -300,24 +310,28 @@ fun PlayerScreen(
                         )
                     }
 
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(12.dp))
 
-                    // ── Speed pill ─────────────────────────────────────────
+                    // ── Info chips: size + speed ───────────────────────────
                     Row(
-                        modifier         = Modifier.fillMaxWidth(),
+                        modifier          = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text  = "Speed",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.55f),
+                        // File-size chip.
+                        InfoChip(
+                            label = "Size",
+                            value = video?.readableSize ?: "—",
                         )
                         Spacer(Modifier.width(10.dp))
+                        InfoChip(
+                            label = "Length",
+                            value = durationMs.formatMs(),
+                        )
+                        Spacer(Modifier.weight(1f))
+                        // Speed cycling pill.
                         SpeedPill(
-                            currentSpeed = speed,
-                            onSpeedChange = { newSpeed ->
-                                speed = newSpeed
-                            },
+                            currentSpeed  = speed,
+                            onSpeedChange = { speed = it },
                         )
                     }
                 }
@@ -326,45 +340,114 @@ fun PlayerScreen(
     }
 }
 
+// ── Info chip ─────────────────────────────────────────────────────────────────
+
+@Composable
+private fun InfoChip(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.White.copy(alpha = 0.08f))
+            .padding(horizontal = 11.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text     = label,
+            fontSize = 10.sp,
+            color    = Color.White.copy(alpha = 0.50f),
+        )
+        Spacer(Modifier.width(6.dp))
+        AnimatedContent(
+            targetState    = value,
+            transitionSpec = { fadeIn(Motion.standard()) togetherWith fadeOut(Motion.snappy()) },
+            label          = "info-chip-value",
+        ) { v ->
+            Text(
+                text       = v,
+                fontSize   = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color      = Color.White,
+            )
+        }
+    }
+}
+
+// ── Favorite button ───────────────────────────────────────────────────────────
+
+@Composable
+private fun FavoriteButton(isFavorite: Boolean, onToggle: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val pop by androidx.compose.animation.core.animateFloatAsState(
+        targetValue   = if (isFavorite) 1f else 0f,
+        animationSpec = Motion.bouncy(),
+        label         = "player-heart-pop",
+    )
+    Box(
+        modifier = Modifier
+            .pressBounce(interaction, pressedScale = 0.78f, spec = Motion.snappy())
+            .size(46.dp)
+            .clip(CircleShape)
+            .background(
+                if (isFavorite) Color(0xFFFF5C8A).copy(alpha = 0.16f)
+                else Color.White.copy(alpha = 0.10f)
+            )
+            .clickable(
+                interactionSource = interaction,
+                indication        = null,
+                onClick           = onToggle,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        AnimatedContent(
+            targetState    = isFavorite,
+            transitionSpec = {
+                scaleIn(Motion.bouncy()) + fadeIn(Motion.snappy()) togetherWith
+                    scaleOut(Motion.snappy()) + fadeOut(Motion.snappy())
+            },
+            label = "player-heart-icon",
+        ) { fav ->
+            Icon(
+                imageVector        = if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                contentDescription = if (fav) "Remove favorite" else "Add favorite",
+                tint               = if (fav) Color(0xFFFF5C8A) else Color.White,
+                modifier           = Modifier
+                    .size(22.dp)
+                    .graphicsLayer {
+                        val s = 1f + 0.20f * pop
+                        scaleX = s
+                        scaleY = s
+                    },
+            )
+        }
+    }
+}
+
 // ── Speed cycling pill ────────────────────────────────────────────────────────
 
 @Composable
-private fun SpeedPill(
-    currentSpeed: Float,
-    onSpeedChange: (Float) -> Unit,
-) {
+private fun SpeedPill(currentSpeed: Float, onSpeedChange: (Float) -> Unit) {
     val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val pillScale by animateFloatAsState(
-        targetValue   = if (pressed) 0.88f else 1f,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
-        label         = "speed-pill-scale",
-    )
-
     Box(
         modifier = Modifier
-            .scale(pillScale)
-            .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+            .pressBounce(interaction, pressedScale = 0.86f, spec = Motion.snappy())
+            .clip(ChipShape)
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
             .clickable(
                 interactionSource = interaction,
                 indication        = null,
             ) {
                 val idx  = SPEED_STEPS.indexOf(currentSpeed).coerceAtLeast(0)
-                val next = SPEED_STEPS[(idx + 1) % SPEED_STEPS.size]
-                onSpeedChange(next)
+                onSpeedChange(SPEED_STEPS[(idx + 1) % SPEED_STEPS.size])
             }
-            .padding(horizontal = 14.dp, vertical = 6.dp),
+            .padding(horizontal = 16.dp, vertical = 7.dp),
         contentAlignment = Alignment.Center,
     ) {
         AnimatedContent(
-            targetState  = currentSpeed.label(),
+            targetState    = currentSpeed.label(),
             transitionSpec = {
-                val enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
-                    scaleIn(initialScale = 0.6f, animationSpec = spring(dampingRatio = 0.6f))
-                val exit  = fadeOut(spring(stiffness = Spring.StiffnessMedium)) +
-                    scaleOut(targetScale = 0.6f, animationSpec = spring(dampingRatio = 0.6f))
-                enter togetherWith exit
+                (slideInVertically(Motion.expressive()) { it / 2 } + fadeIn(Motion.snappy()) +
+                    scaleIn(Motion.bouncy(), initialScale = 0.7f)) togetherWith
+                    (slideOutVertically(Motion.snappy()) { -it / 2 } + fadeOut(Motion.snappy()))
             },
             label = "speed-label",
         ) { label ->
@@ -381,23 +464,14 @@ private fun SpeedPill(
 // ── Play / Pause button ───────────────────────────────────────────────────────
 
 @Composable
-private fun PlayPauseButton(
-    isPlaying: Boolean,
-    onClick: () -> Unit,
-) {
+private fun PlayPauseButton(isPlaying: Boolean, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue   = if (pressed) 0.84f else 1f,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
-        label         = "playpause-scale",
-    )
     Box(
         modifier = Modifier
-            .scale(scale)
-            .size(62.dp)
+            .pressBounce(interaction, pressedScale = 0.82f, spec = Motion.snappy())
+            .size(64.dp)
             .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.15f))
+            .background(Color.White.copy(alpha = 0.16f))
             .clickable(
                 interactionSource = interaction,
                 indication        = null,
@@ -406,54 +480,21 @@ private fun PlayPauseButton(
         contentAlignment = Alignment.Center,
     ) {
         AnimatedContent(
-            targetState  = isPlaying,
+            targetState    = isPlaying,
             transitionSpec = {
-                val enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
-                    scaleIn(initialScale = 0.7f, animationSpec = spring(dampingRatio = 0.55f))
-                val exit  = fadeOut(spring(stiffness = Spring.StiffnessMedium)) +
-                    scaleOut(targetScale = 0.7f, animationSpec = spring(dampingRatio = 0.55f))
-                enter togetherWith exit
+                scaleIn(Motion.bouncy(), initialScale = 0.6f) + fadeIn(Motion.snappy()) togetherWith
+                    scaleOut(Motion.snappy(), targetScale = 0.6f) + fadeOut(Motion.snappy())
             },
             label = "play-pause-icon",
         ) { playing ->
             Icon(
-                imageVector        = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                imageVector        = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                 contentDescription = if (playing) "Pause" else "Play",
                 tint               = Color.White,
                 modifier           = Modifier.size(38.dp),
             )
         }
     }
-}
-
-// ── Glass icon button ─────────────────────────────────────────────────────────
-
-@Composable
-private fun GlassIconButton(
-    onClick: () -> Unit,
-    size: Dp,
-    content: @Composable () -> Unit,
-) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue   = if (pressed) 0.82f else 1f,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
-        label         = "icon-btn-scale",
-    )
-    Box(
-        modifier = Modifier
-            .scale(scale)
-            .size(size)
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.10f))
-            .clickable(
-                interactionSource = interaction,
-                indication        = null,
-                onClick           = onClick,
-            ),
-        contentAlignment = Alignment.Center,
-    ) { content() }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

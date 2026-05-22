@@ -8,13 +8,16 @@ import kotlinx.coroutines.withContext
 
 class MediaStoreVideoSource(private val context: Context) {
 
+    private val projection = arrayOf(
+        MediaStore.Video.Media._ID,
+        MediaStore.Video.Media.DISPLAY_NAME,
+        MediaStore.Video.Media.DURATION,
+        MediaStore.Video.Media.SIZE,
+        MediaStore.Video.Media.DATE_ADDED,
+    )
+
     suspend fun loadVideos(): List<Video> = withContext(Dispatchers.IO) {
         val videos = mutableListOf<Video>()
-        val projection = arrayOf(
-            MediaStore.Video.Media._ID,
-            MediaStore.Video.Media.DISPLAY_NAME,
-            MediaStore.Video.Media.DURATION,
-        )
         context.contentResolver.query(
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
             projection,
@@ -25,6 +28,8 @@ class MediaStoreVideoSource(private val context: Context) {
             val idCol   = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
             val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
             val durCol  = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+            val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
+            val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
                 val contentUri = ContentUris.withAppendedId(
@@ -36,6 +41,8 @@ class MediaStoreVideoSource(private val context: Context) {
                     title        = cursor.getString(nameCol) ?: "Unknown",
                     duration     = cursor.getLong(durCol),
                     thumbnailUri = contentUri,
+                    sizeBytes    = cursor.getLong(sizeCol),
+                    dateAdded    = cursor.getLong(dateCol),
                 )
             }
         }
@@ -43,11 +50,6 @@ class MediaStoreVideoSource(private val context: Context) {
     }
 
     suspend fun loadVideoById(id: Long): Video? = withContext(Dispatchers.IO) {
-        val projection = arrayOf(
-            MediaStore.Video.Media._ID,
-            MediaStore.Video.Media.DISPLAY_NAME,
-            MediaStore.Video.Media.DURATION,
-        )
         context.contentResolver.query(
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
             projection,
@@ -65,6 +67,8 @@ class MediaStoreVideoSource(private val context: Context) {
                     title        = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)) ?: "Unknown",
                     duration     = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)),
                     thumbnailUri = contentUri,
+                    sizeBytes    = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)),
+                    dateAdded    = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)),
                 )
             } else null
         }

@@ -7,21 +7,25 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,12 +35,16 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -51,7 +59,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -65,14 +72,16 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.darsma.glassgallery.R
 import com.darsma.glassgallery.data.Video
+import com.darsma.glassgallery.data.formatBytes
+import com.darsma.glassgallery.ui.components.BouncyIconButton
+import com.darsma.glassgallery.ui.components.Motion
 import com.darsma.glassgallery.ui.components.MiniPlayer
 import com.darsma.glassgallery.ui.components.liquidGlassBorder
+import com.darsma.glassgallery.ui.components.pressBounce
 import kotlinx.coroutines.delay
 
 private val CardShape = RoundedCornerShape(20.dp)
 private val PillShape = RoundedCornerShape(50)
-
-// Height the MiniPlayer occupies including its vertical padding.
 private val MINI_PLAYER_HEIGHT = 92.dp
 
 @Composable
@@ -83,12 +92,17 @@ fun GalleryScreen(
     onVideoClick: (Video) -> Unit,
     onMiniPlayerClick: () -> Unit,
 ) {
-    val context          = LocalContext.current
-    val uiState          by viewModel.uiState.collectAsState()
-    val currentVideo     by viewModel.currentVideo.collectAsState()
-    val currentProgress  by viewModel.currentProgress.collectAsState()
-    val currentIsPlaying by viewModel.currentIsPlaying.collectAsState()
+    val context           = LocalContext.current
+    val uiState           by viewModel.uiState.collectAsState()
+    val currentVideo      by viewModel.currentVideo.collectAsState()
+    val currentProgress   by viewModel.currentProgress.collectAsState()
+    val currentIsPlaying  by viewModel.currentIsPlaying.collectAsState()
+    val sortOrder         by viewModel.sortOrder.collectAsState()
+    val favorites         by viewModel.favorites.collectAsState()
+    val favoritesOnly     by viewModel.showFavoritesOnly.collectAsState()
     val hasMiniPlayer = currentVideo != null
+
+    var sortSheetVisible by remember { mutableStateOf(false) }
 
     val permission = if (Build.VERSION.SDK_INT >= 33)
         Manifest.permission.READ_MEDIA_VIDEO
@@ -115,7 +129,6 @@ fun GalleryScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        // Soft ambient glow behind everything — gives the dark UI depth.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -136,8 +149,13 @@ fun GalleryScreen(
                 .fillMaxSize()
                 .statusBarsPadding(),
         ) {
+            val successState = uiState as? GalleryUiState.Success
             GalleryHeader(
-                videoCount = (uiState as? GalleryUiState.Success)?.videos?.size ?: 0,
+                videoCount     = successState?.videos?.size ?: 0,
+                totalSizeBytes = successState?.videos?.sumOf { it.sizeBytes } ?: 0L,
+                favoritesOnly  = favoritesOnly,
+                onToggleFavs   = { viewModel.toggleFavoritesFilter() },
+                onOpenSort     = { sortSheetVisible = true },
             )
 
             when (val state = uiState) {
@@ -163,39 +181,52 @@ fun GalleryScreen(
                 }
 
                 is GalleryUiState.Success -> {
-                    LazyVerticalGrid(
-                        columns               = GridCells.Fixed(2),
-                        modifier              = Modifier.fillMaxSize(),
-                        contentPadding        = PaddingValues(
-                            start  = 14.dp,
-                            end    = 14.dp,
-                            top    = 4.dp,
-                            bottom = if (hasMiniPlayer) MINI_PLAYER_HEIGHT + 18.dp else 18.dp,
-                        ),
-                        verticalArrangement   = Arrangement.spacedBy(14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        itemsIndexed(
-                            items = state.videos,
-                            key   = { _, video -> video.id },
-                        ) { index, video ->
-                            VideoCard(
-                                video    = video,
-                                index    = index,
-                                onClick  = { onVideoClick(video) },
-                                modifier = Modifier.animateItem(
-                                    placementSpec = spring(dampingRatio = 0.8f, stiffness = 380f),
-                                ),
+                    if (state.videos.isEmpty()) {
+                        CenterBox {
+                            Text(
+                                text     = if (favoritesOnly)
+                                    "No favorites yet.\nTap the heart on a video to add one."
+                                else
+                                    "No videos found.",
+                                color     = Color.White.copy(alpha = 0.55f),
+                                fontSize  = 15.sp,
+                                modifier  = Modifier.padding(32.dp),
                             )
+                        }
+                    } else {
+                        LazyVerticalGrid(
+                            columns               = GridCells.Fixed(2),
+                            modifier              = Modifier.fillMaxSize(),
+                            contentPadding         = PaddingValues(
+                                start  = 14.dp,
+                                end    = 14.dp,
+                                top    = 4.dp,
+                                bottom = if (hasMiniPlayer) MINI_PLAYER_HEIGHT + 18.dp else 18.dp,
+                            ),
+                            verticalArrangement    = Arrangement.spacedBy(14.dp),
+                            horizontalArrangement  = Arrangement.spacedBy(14.dp),
+                        ) {
+                            itemsIndexed(
+                                items = state.videos,
+                                key   = { _, video -> video.id },
+                            ) { index, video ->
+                                VideoCard(
+                                    video       = video,
+                                    index       = index,
+                                    isFavorite  = video.id in favorites,
+                                    onClick     = { onVideoClick(video) },
+                                    onToggleFav = { viewModel.toggleFavorite(video.id) },
+                                    modifier    = Modifier.animateItem(
+                                        placementSpec = Motion.standard(),
+                                    ),
+                                )
+                            }
                         }
                     }
                 }
             }
         }
 
-        // MiniPlayer — anchored at the BOTTOM, full width. This is the ONLY
-        // composable on the gallery side that carries the shared-element key,
-        // so the player ALWAYS morphs straight down into this bar.
         MiniPlayer(
             video                   = currentVideo,
             isPlaying               = currentIsPlaying,
@@ -208,6 +239,17 @@ fun GalleryScreen(
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding(),
         )
+
+        // Sort bottom-sheet overlays everything.
+        SortSheet(
+            visible   = sortSheetVisible,
+            current   = sortOrder,
+            onSelect  = { order ->
+                viewModel.setSortOrder(order)
+                sortSheetVisible = false
+            },
+            onDismiss = { sortSheetVisible = false },
+        )
     }
 }
 
@@ -217,55 +259,105 @@ private fun CenterBox(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun GalleryHeader(videoCount: Int) {
-    Column(
+private fun GalleryHeader(
+    videoCount: Int,
+    totalSizeBytes: Long,
+    favoritesOnly: Boolean,
+    onToggleFavs: () -> Unit,
+    onOpenSort: () -> Unit,
+) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 22.dp, end = 22.dp, top = 20.dp, bottom = 12.dp),
+            .padding(start = 22.dp, end = 16.dp, top = 18.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text       = stringResource(R.string.app_name),
-            fontSize   = 32.sp,
-            fontWeight = FontWeight.Bold,
-            style      = MaterialTheme.typography.headlineLarge.copy(
-                brush = Brush.linearGradient(
-                    colors = listOf(Color(0xFFF3EEFF), Color(0xFFBBA6F2)),
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text       = stringResource(R.string.app_name),
+                fontSize   = 32.sp,
+                fontWeight = FontWeight.Bold,
+                style      = MaterialTheme.typography.headlineLarge.copy(
+                    brush = Brush.linearGradient(
+                        colors = listOf(Color(0xFFF3EEFF), Color(0xFFBBA6F2)),
+                    ),
                 ),
-            ),
+            )
+            Spacer(Modifier.height(4.dp))
+            // Subtitle cross-fades whenever the count/size changes.
+            AnimatedContent(
+                targetState    = videoCount to totalSizeBytes,
+                transitionSpec = {
+                    (fadeIn(Motion.standard()) togetherWith fadeOut(Motion.snappy()))
+                },
+                label = "gallery-subtitle",
+            ) { (count, size) ->
+                Text(
+                    text     = when (count) {
+                        0    -> if (favoritesOnly) "No favorites" else "Your library"
+                        else -> "$count ${if (count == 1) "video" else "videos"}  ·  ${formatBytes(size)}"
+                    },
+                    fontSize = 13.sp,
+                    color    = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.50f),
+                )
+            }
+        }
+
+        // Favorites filter toggle.
+        val favTint by animateFloatAsState(
+            targetValue   = if (favoritesOnly) 1f else 0f,
+            animationSpec = Motion.standard(),
+            label         = "fav-filter-tint",
         )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text     = when (videoCount) {
-                0    -> "Your library"
-                1    -> "1 video"
-                else -> "$videoCount videos"
-            },
-            fontSize = 13.sp,
-            color    = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.50f),
-        )
+        BouncyIconButton(
+            onClick    = onToggleFavs,
+            size       = 44.dp,
+            background = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f + 0.22f * favTint),
+        ) {
+            AnimatedContent(
+                targetState    = favoritesOnly,
+                transitionSpec = {
+                    scaleIn(Motion.bouncy()) + fadeIn(Motion.snappy()) togetherWith
+                        scaleOut(Motion.snappy()) + fadeOut(Motion.snappy())
+                },
+                label = "fav-filter-icon",
+            ) { on ->
+                Icon(
+                    imageVector        = if (on) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    contentDescription = "Show favorites only",
+                    tint               = if (on) Color(0xFFFF5C8A) else Color.White,
+                    modifier           = Modifier.size(21.dp),
+                )
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        // Sort button.
+        BouncyIconButton(
+            onClick    = onOpenSort,
+            size       = 44.dp,
+            background = Color.White.copy(alpha = 0.10f),
+        ) {
+            Icon(
+                imageVector        = Icons.Rounded.SwapVert,
+                contentDescription = "Sort videos",
+                tint               = Color.White,
+                modifier           = Modifier.size(22.dp),
+            )
+        }
     }
 }
 
-/**
- * A grid thumbnail. Intentionally NOT a shared element — the morph target is
- * always the bottom MiniPlayer, so the card stays a plain (animated) tile.
- */
 @Composable
 private fun VideoCard(
     video: Video,
     index: Int,
+    isFavorite: Boolean,
     onClick: () -> Unit,
+    onToggleFav: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val pressScale by animateFloatAsState(
-        targetValue   = if (pressed) 0.955f else 1f,
-        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium),
-        label         = "card-press",
-    )
+    val cardInteraction = remember { MutableInteractionSource() }
 
-    // Staggered entrance: each card eases up + fades in, slightly after the last.
     var appeared by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         delay(index.coerceAtMost(14) * 28L)
@@ -273,7 +365,7 @@ private fun VideoCard(
     }
     val appear by animateFloatAsState(
         targetValue   = if (appeared) 1f else 0f,
-        animationSpec = tween(durationMillis = 420),
+        animationSpec = tween(durationMillis = 440),
         label         = "card-appear",
     )
 
@@ -283,12 +375,12 @@ private fun VideoCard(
                 alpha        = appear
                 translationY = (1f - appear) * 46f
             }
-            .scale(pressScale)
+            .pressBounce(cardInteraction, pressedScale = 0.955f, spec = Motion.standard())
             .aspectRatio(16f / 9f)
             .clip(CardShape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable(
-                interactionSource = interaction,
+                interactionSource = cardInteraction,
                 indication        = null,
                 onClick           = onClick,
             ),
@@ -300,15 +392,14 @@ private fun VideoCard(
             modifier           = Modifier.fillMaxSize(),
         )
 
-        // Legibility scrim — transparent up top, darkening toward the title.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         0.00f to Color.Transparent,
-                        0.52f to Color.Transparent,
-                        1.00f to Color.Black.copy(alpha = 0.74f),
+                        0.48f to Color.Transparent,
+                        1.00f to Color.Black.copy(alpha = 0.78f),
                     )
                 )
         )
@@ -333,7 +424,16 @@ private fun VideoCard(
             )
         }
 
-        // Title — bottom-left, leaves room for the duration badge.
+        // Favorite heart — top-right.
+        FavoriteHeart(
+            isFavorite = isFavorite,
+            onToggle   = onToggleFav,
+            modifier   = Modifier
+                .align(Alignment.TopEnd)
+                .padding(7.dp),
+        )
+
+        // Title.
         Text(
             text       = video.title,
             style      = MaterialTheme.typography.labelMedium,
@@ -343,19 +443,19 @@ private fun VideoCard(
             overflow   = TextOverflow.Ellipsis,
             modifier   = Modifier
                 .align(Alignment.BottomStart)
-                .fillMaxWidth(0.70f)
+                .fillMaxWidth(0.62f)
                 .padding(start = 11.dp, bottom = 10.dp),
         )
 
-        // Duration badge — bottom-right frosted pill.
-        DurationBadge(
+        // Duration + size badge — bottom-right.
+        InfoBadge(
             durationMs = video.duration,
+            sizeBytes  = video.sizeBytes,
             modifier   = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 9.dp, bottom = 9.dp),
         )
 
-        // Hairline glass edge over the whole card.
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -365,15 +465,70 @@ private fun VideoCard(
 }
 
 @Composable
-private fun DurationBadge(durationMs: Long, modifier: Modifier = Modifier) {
+private fun FavoriteHeart(
+    isFavorite: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    // The heart pops with an overshoot every time it flips on.
+    val pop by animateFloatAsState(
+        targetValue   = if (isFavorite) 1f else 0f,
+        animationSpec = Motion.bouncy(),
+        label         = "heart-pop",
+    )
+    Box(
+        modifier = modifier
+            .pressBounce(interaction, pressedScale = 0.78f, spec = Motion.snappy())
+            .size(32.dp)
+            .clip(RoundedCornerShape(50))
+            .background(Color.Black.copy(alpha = 0.34f))
+            .clickable(
+                interactionSource = interaction,
+                indication        = null,
+                onClick           = onToggle,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        AnimatedContent(
+            targetState    = isFavorite,
+            transitionSpec = {
+                scaleIn(Motion.bouncy()) + fadeIn(Motion.snappy()) togetherWith
+                    scaleOut(Motion.snappy()) + fadeOut(Motion.snappy())
+            },
+            label = "heart-icon",
+        ) { fav ->
+            Icon(
+                imageVector        = if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                contentDescription = if (fav) "Remove favorite" else "Add favorite",
+                tint               = if (fav) Color(0xFFFF5C8A) else Color.White,
+                modifier           = Modifier
+                    .size(17.dp)
+                    .graphicsLayer {
+                        // Subtle extra swell at the peak of the pop.
+                        val s = 1f + 0.18f * pop
+                        scaleX = s
+                        scaleY = s
+                    },
+            )
+        }
+    }
+}
+
+@Composable
+private fun InfoBadge(
+    durationMs: Long,
+    sizeBytes: Long,
+    modifier: Modifier = Modifier,
+) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(7.dp))
-            .background(Color.Black.copy(alpha = 0.55f))
+            .background(Color.Black.copy(alpha = 0.58f))
             .padding(horizontal = 7.dp, vertical = 3.dp),
     ) {
         Text(
-            text       = formatDuration(durationMs),
+            text       = "${formatDuration(durationMs)}  ·  ${formatBytes(sizeBytes)}",
             fontSize   = 10.sp,
             fontWeight = FontWeight.Medium,
             color      = Color.White,

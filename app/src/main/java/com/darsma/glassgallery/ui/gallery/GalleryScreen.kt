@@ -162,7 +162,7 @@ fun GalleryScreen(
                     )
                 }
 
-                is GalleryUiState.Success -> with(sharedTransitionScope) {
+                is GalleryUiState.Success -> {
                     LazyVerticalGrid(
                         columns               = GridCells.Fixed(2),
                         modifier              = Modifier.fillMaxSize(),
@@ -180,11 +180,9 @@ fun GalleryScreen(
                             key   = { _, video -> video.id },
                         ) { index, video ->
                             VideoCard(
-                                video                   = video,
-                                index                   = index,
-                                sharedTransitionScope   = this@with,
-                                animatedVisibilityScope = animatedVisibilityScope,
-                                onClick                 = { onVideoClick(video) },
+                                video    = video,
+                                index    = index,
+                                onClick  = { onVideoClick(video) },
                                 modifier = Modifier.animateItem(
                                     placementSpec = spring(dampingRatio = 0.8f, stiffness = 380f),
                                 ),
@@ -195,7 +193,9 @@ fun GalleryScreen(
             }
         }
 
-        // MiniPlayer — anchored at the BOTTOM, full width, never clipped.
+        // MiniPlayer — anchored at the BOTTOM, full width. This is the ONLY
+        // composable on the gallery side that carries the shared-element key,
+        // so the player ALWAYS morphs straight down into this bar.
         MiniPlayer(
             video                   = currentVideo,
             isPlaying               = currentIsPlaying,
@@ -246,12 +246,14 @@ private fun GalleryHeader(videoCount: Int) {
     }
 }
 
+/**
+ * A grid thumbnail. Intentionally NOT a shared element — the morph target is
+ * always the bottom MiniPlayer, so the card stays a plain (animated) tile.
+ */
 @Composable
 private fun VideoCard(
     video: Video,
     index: Int,
-    sharedTransitionScope: SharedTransitionScope,
-    animatedVisibilityScope: AnimatedVisibilityScope,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -275,99 +277,90 @@ private fun VideoCard(
         label         = "card-appear",
     )
 
-    with(sharedTransitionScope) {
-        Box(
-            modifier = modifier
-                .graphicsLayer {
-                    alpha        = appear
-                    translationY = (1f - appear) * 46f
-                }
-                .scale(pressScale)
-                .aspectRatio(16f / 9f)
-                .sharedBounds(
-                    sharedContentState      = rememberSharedContentState("video-surface-${video.id}"),
-                    animatedVisibilityScope = animatedVisibilityScope,
-                    boundsTransform         = { _, _ ->
-                        spring(dampingRatio = 0.82f, stiffness = 340f)
-                    },
-                )
-                .clip(CardShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .clickable(
-                    interactionSource = interaction,
-                    indication        = null,
-                    onClick           = onClick,
-                ),
-        ) {
-            AsyncImage(
-                model              = video.thumbnailUri,
-                contentDescription = video.title,
-                contentScale       = ContentScale.Crop,
-                modifier           = Modifier.fillMaxSize(),
-            )
-
-            // Legibility scrim — transparent up top, darkening toward the title.
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            0.00f to Color.Transparent,
-                            0.52f to Color.Transparent,
-                            1.00f to Color.Black.copy(alpha = 0.74f),
-                        )
-                    )
-            )
-
-            // Centered glass play affordance.
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(44.dp)
-                    .clip(PillShape)
-                    .background(Color.Black.copy(alpha = 0.30f))
-                    .liquidGlassBorder(PillShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector        = Icons.Rounded.PlayArrow,
-                    contentDescription = null,
-                    tint               = Color.White,
-                    modifier           = Modifier
-                        .size(24.dp)
-                        .padding(start = 2.dp),
-                )
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                alpha        = appear
+                translationY = (1f - appear) * 46f
             }
+            .scale(pressScale)
+            .aspectRatio(16f / 9f)
+            .clip(CardShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(
+                interactionSource = interaction,
+                indication        = null,
+                onClick           = onClick,
+            ),
+    ) {
+        AsyncImage(
+            model              = video.thumbnailUri,
+            contentDescription = video.title,
+            contentScale       = ContentScale.Crop,
+            modifier           = Modifier.fillMaxSize(),
+        )
 
-            // Title — bottom-left, leaves room for the duration badge.
-            Text(
-                text       = video.title,
-                style      = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color      = Color.White,
-                maxLines   = 1,
-                overflow   = TextOverflow.Ellipsis,
-                modifier   = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth(0.70f)
-                    .padding(start = 11.dp, bottom = 10.dp),
-            )
+        // Legibility scrim — transparent up top, darkening toward the title.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0.00f to Color.Transparent,
+                        0.52f to Color.Transparent,
+                        1.00f to Color.Black.copy(alpha = 0.74f),
+                    )
+                )
+        )
 
-            // Duration badge — bottom-right frosted pill.
-            DurationBadge(
-                durationMs = video.duration,
-                modifier   = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 9.dp, bottom = 9.dp),
-            )
-
-            // Hairline glass edge over the whole card.
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .liquidGlassBorder(CardShape)
+        // Centered glass play affordance.
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .size(44.dp)
+                .clip(PillShape)
+                .background(Color.Black.copy(alpha = 0.30f))
+                .liquidGlassBorder(PillShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector        = Icons.Rounded.PlayArrow,
+                contentDescription = null,
+                tint               = Color.White,
+                modifier           = Modifier
+                    .size(24.dp)
+                    .padding(start = 2.dp),
             )
         }
+
+        // Title — bottom-left, leaves room for the duration badge.
+        Text(
+            text       = video.title,
+            style      = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color      = Color.White,
+            maxLines   = 1,
+            overflow   = TextOverflow.Ellipsis,
+            modifier   = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth(0.70f)
+                .padding(start = 11.dp, bottom = 10.dp),
+        )
+
+        // Duration badge — bottom-right frosted pill.
+        DurationBadge(
+            durationMs = video.duration,
+            modifier   = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 9.dp, bottom = 9.dp),
+        )
+
+        // Hairline glass edge over the whole card.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .liquidGlassBorder(CardShape)
+        )
     }
 }
 

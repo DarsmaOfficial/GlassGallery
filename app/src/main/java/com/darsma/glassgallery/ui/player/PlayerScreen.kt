@@ -59,6 +59,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -186,20 +187,39 @@ fun PlayerScreen(
             override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
         }
         player.addListener(listener)
+        // Frame-synced position updates: the UI reads a fresh playback position
+        // on every single rendered frame, so the seek bar glides instead of
+        // stepping in 60 ms increments. The cross-screen MiniPlayer state only
+        // needs ~5 Hz, so it is throttled separately.
+        var lastStateSync = 0L
         while (true) {
-            if (!isSeeking) currentPosition = player.currentPosition
-            duration = if (player.duration != C.TIME_UNSET) player.duration else 0L
-            val dur = if (player.duration != C.TIME_UNSET) player.duration.coerceAtLeast(1L) else 1L
-            galleryViewModel.updatePlaybackState(
-                progress  = (player.currentPosition.toFloat() / dur).coerceIn(0f, 1f),
-                isPlaying = player.isPlaying,
-            )
-            delay(60L)
+            withFrameMillis { frameTimeMs ->
+                if (!isSeeking) currentPosition = player.currentPosition
+                duration = if (player.duration != C.TIME_UNSET) player.duration else 0L
+                if (frameTimeMs - lastStateSync >= 200L) {
+                    lastStateSync = frameTimeMs
+                    val dur = if (player.duration != C.TIME_UNSET) player.duration.coerceAtLeast(1L) else 1L
+                    galleryViewModel.updatePlaybackState(
+                        progress  = (player.currentPosition.toFloat() / dur).coerceIn(0f, 1f),
+                        isPlaying = player.isPlaying,
+                    )
+                }
+            }
         }
     }
 
     var controlsVisible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { delay(220L); controlsVisible = true }
+
+    // Auto-hide the chrome while playback runs, like a polished video player.
+    // Pausing or scrubbing keeps the controls on screen; a single tap on the
+    // video brings them back (or dismisses them early).
+    LaunchedEffect(controlsVisible, isPlaying, isSeeking) {
+        if (controlsVisible && isPlaying && !isSeeking) {
+            delay(4_000L)
+            controlsVisible = false
+        }
+    }
 
     with(sharedTransitionScope) {
         Box(
@@ -214,6 +234,9 @@ fun PlayerScreen(
                     scaleX = s
                     scaleY = s
                     alpha  = 1f - 0.30f * p
+                    // Settle slightly downward as the gesture progresses — it
+                    // previews the player returning home to the bottom bar.
+                    translationY = 28.dp.toPx() * p
                     if (p > 0.001f) {
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(48f * p)
                         clip  = true
@@ -232,6 +255,7 @@ fun PlayerScreen(
                     )
                     .pointerInput(Unit) {
                         detectTapGestures(
+                            onTap       = { controlsVisible = !controlsVisible },
                             onDoubleTap = { offset ->
                                 val forward = offset.x > size.width / 2f
                                 val step    = 10_000L

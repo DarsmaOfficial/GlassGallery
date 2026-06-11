@@ -71,6 +71,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.darsma.glassgallery.R
@@ -81,6 +82,7 @@ import com.darsma.glassgallery.ui.components.Motion
 import com.darsma.glassgallery.ui.components.MiniPlayer
 import com.darsma.glassgallery.ui.components.liquidGlassBorder
 import com.darsma.glassgallery.ui.components.pressBounce
+import com.darsma.glassgallery.ui.components.shimmer
 import kotlinx.coroutines.delay
 
 private val CardShape = RoundedCornerShape(20.dp)
@@ -179,7 +181,16 @@ fun GalleryScreen(
                 },
             )
 
-            when (val state = uiState) {
+            AnimatedContent(
+                targetState    = uiState,
+                contentKey     = { it::class },
+                transitionSpec = {
+                    fadeIn(Motion.standard()) togetherWith fadeOut(Motion.snappy())
+                },
+                label    = "gallery-state",
+                modifier = Modifier.fillMaxSize(),
+            ) { state ->
+            when (state) {
                 is GalleryUiState.Loading -> CenterBox {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 }
@@ -245,6 +256,7 @@ fun GalleryScreen(
                         }
                     }
                 }
+            }
             }
         }
 
@@ -408,15 +420,19 @@ private fun VideoCard(
     }
     val appear by animateFloatAsState(
         targetValue   = if (appeared) 1f else 0f,
-        animationSpec = tween(durationMillis = 440),
+        animationSpec = Motion.expressive(),
         label         = "card-appear",
     )
 
     Box(
         modifier = modifier
             .graphicsLayer {
-                alpha        = appear
+                alpha        = appear.coerceIn(0f, 1f)
                 translationY = (1f - appear) * 46f
+                // Gentle scale overshoot so each card "lands" with life.
+                val sc = 0.94f + 0.06f * appear
+                scaleX = sc
+                scaleY = sc
             }
             .pressBounce(cardInteraction, pressedScale = 0.955f, spec = Motion.standard())
             .aspectRatio(16f / 9f)
@@ -428,6 +444,7 @@ private fun VideoCard(
                 onClick           = onClick,
             ),
     ) {
+        var thumbResolved by remember { mutableStateOf(false) }
         AsyncImage(
             model              = ImageRequest.Builder(LocalContext.current)
                 .data(video.thumbnailUri)
@@ -435,8 +452,27 @@ private fun VideoCard(
                 .build(),
             contentDescription = video.title,
             contentScale       = ContentScale.Crop,
+            onState            = { st ->
+                thumbResolved = st is AsyncImagePainter.State.Success ||
+                    st is AsyncImagePainter.State.Error
+            },
             modifier           = Modifier.fillMaxSize(),
         )
+        // Shimmer placeholder — sweeps until the thumbnail resolves, then
+        // fades away so loading never looks static.
+        val shimmerAlpha by animateFloatAsState(
+            targetValue   = if (thumbResolved) 0f else 1f,
+            animationSpec = tween(durationMillis = 320),
+            label         = "shimmer-fade",
+        )
+        if (shimmerAlpha > 0.01f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = shimmerAlpha }
+                    .shimmer()
+            )
+        }
 
         Box(
             modifier = Modifier

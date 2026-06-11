@@ -56,7 +56,9 @@ fun SmoothSeekBar(
         targetValue = shownProgress.coerceIn(0f, 1f),
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness    = if (dragging) Spring.StiffnessHigh else Spring.StiffnessLow,
+            // Position now updates every frame, so the spring can track much
+            // tighter without ever looking steppy.
+            stiffness    = if (dragging) Spring.StiffnessHigh else Spring.StiffnessMediumLow,
         ),
         label = "seek-progress",
     )

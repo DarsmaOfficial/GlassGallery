@@ -2,9 +2,15 @@ package com.darsma.glassgallery.ui.components
 
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -18,7 +24,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -104,4 +113,39 @@ fun BouncyIconButton(
             ),
         contentAlignment = Alignment.Center,
     ) { content() }
+}
+
+/**
+ * Lightweight shimmer sweep for loading placeholders. A soft diagonal band of
+ * light travels across the surface — the universal "content is on its way"
+ * signal, drawn entirely in one draw call.
+ */
+@Composable
+fun Modifier.shimmer(): Modifier {
+    val transition = rememberInfiniteTransition(label = "shimmer")
+    val travel by transition.animateFloat(
+        initialValue  = -1f,
+        targetValue   = 2f,
+        animationSpec = infiniteRepeatable(
+            animation  = tween(durationMillis = 1300, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "shimmer-travel",
+    )
+    return this.drawWithContent {
+        drawContent()
+        val band = size.width * 0.55f
+        val x    = travel * size.width
+        drawRect(
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    Color.White.copy(alpha = 0.07f),
+                    Color.Transparent,
+                ),
+                start = Offset(x, 0f),
+                end   = Offset(x + band, size.height),
+            ),
+        )
+    }
 }

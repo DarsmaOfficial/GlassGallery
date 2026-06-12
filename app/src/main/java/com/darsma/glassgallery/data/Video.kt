@@ -10,6 +10,7 @@ data class Video(
     val thumbnailUri: Uri,
     val sizeBytes: Long = 0L,  // file size in bytes
     val dateAdded: Long = 0L,  // unix seconds
+    val isVideo: Boolean = true,  // false → this item is a photo
 ) {
     /** Human-readable file size, e.g. "24.6 MB". */
     val readableSize: String

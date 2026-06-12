@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/** Which media kinds the grid is currently showing. */
+enum class MediaFilter { ALL, VIDEOS, PHOTOS }
+
 sealed interface GalleryUiState {
     data object Loading            : GalleryUiState
     data object PermissionRequired : GalleryUiState
@@ -41,9 +44,13 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private val _showFavoritesOnly = MutableStateFlow(false)
     val showFavoritesOnly: StateFlow<Boolean> = _showFavoritesOnly.asStateFlow()
 
-    /** Free-text search query applied to video titles. */
+    /** Free-text search query applied to media titles. */
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    /** All / Videos / Photos segmented filter. */
+    private val _mediaFilter = MutableStateFlow(MediaFilter.ALL)
+    val mediaFilter: StateFlow<MediaFilter> = _mediaFilter.asStateFlow()
 
     private val _currentVideo = MutableStateFlow<Video?>(null)
     val currentVideo: StateFlow<Video?> = _currentVideo.asStateFlow()
@@ -104,12 +111,20 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         applyFilters()
     }
 
+    // ── Media type filter ──────────────────────────────────────────────────
+
+    fun setMediaFilter(filter: MediaFilter) {
+        if (filter == _mediaFilter.value) return
+        _mediaFilter.value = filter
+        applyFilters()
+    }
+
     // ── Internals ──────────────────────────────────────────────────────────
 
     private fun loadVideos() {
         viewModelScope.launch {
             _uiState.value = GalleryUiState.Loading
-            runCatching { videoSource.loadVideos() }
+            runCatching { videoSource.loadAllMedia() }
                 .onSuccess {
                     rawVideos = it
                     applyFilters()
@@ -125,6 +140,13 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         val query = _searchQuery.value.trim()
         val filtered = rawVideos
             .asSequence()
+            .filter {
+                when (_mediaFilter.value) {
+                    MediaFilter.ALL    -> true
+                    MediaFilter.VIDEOS -> it.isVideo
+                    MediaFilter.PHOTOS -> !it.isVideo
+                }
+            }
             .filter { !_showFavoritesOnly.value || it.id in _favorites.value }
             .filter { query.isEmpty() || it.title.contains(query, ignoreCase = true) }
             .toList()

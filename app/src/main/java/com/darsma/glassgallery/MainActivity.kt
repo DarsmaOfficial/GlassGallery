@@ -25,6 +25,7 @@ import androidx.navigation.navArgument
 import com.darsma.glassgallery.data.Video
 import com.darsma.glassgallery.ui.gallery.GalleryScreen
 import com.darsma.glassgallery.ui.gallery.GalleryViewModel
+import com.darsma.glassgallery.ui.photo.PhotoViewerScreen
 import com.darsma.glassgallery.ui.player.PlayerScreen
 import com.darsma.glassgallery.ui.theme.GlassGalleryTheme
 
@@ -75,9 +76,13 @@ private fun GlassGalleryNavHost() {
                     viewModel               = galleryViewModel,
                     animatedVisibilityScope = this,
                     sharedTransitionScope   = this@SharedTransitionLayout,
-                    onVideoClick = { video: Video ->
-                        galleryViewModel.selectVideo(video)
-                        navController.navigate("player/${video.id}")
+                    onVideoClick = { media: Video ->
+                        if (media.isVideo) {
+                            galleryViewModel.selectVideo(media)
+                            navController.navigate("player/${media.id}")
+                        } else {
+                            navController.navigate("photo/${media.id}")
+                        }
                     },
                     onMiniPlayerClick = {
                         galleryViewModel.currentVideo.value?.id?.let { id ->
@@ -113,6 +118,25 @@ private fun GlassGalleryNavHost() {
                 val videoId = backStackEntry.arguments?.getLong("videoId") ?: return@composable
                 PlayerScreen(
                     videoId                 = videoId,
+                    galleryViewModel        = galleryViewModel,
+                    animatedVisibilityScope = this,
+                    sharedTransitionScope   = this@SharedTransitionLayout,
+                    onBack                  = { navController.popBackStack() },
+                )
+            }
+
+            // Photo viewer — transitions are intentionally minimal fades:
+            // the grid-card → fullscreen shared-element morph carries the
+            // entire entrance and exit.
+            composable(
+                route     = "photo/{photoId}",
+                arguments = listOf(navArgument("photoId") { type = NavType.LongType }),
+                enterTransition   = { fadeIn(spring(stiffness = 300f)) },
+                popExitTransition = { fadeOut(spring(stiffness = 400f)) },
+            ) { backStackEntry ->
+                val photoId = backStackEntry.arguments?.getLong("photoId") ?: return@composable
+                PhotoViewerScreen(
+                    photoId                 = photoId,
                     galleryViewModel        = galleryViewModel,
                     animatedVisibilityScope = this,
                     sharedTransitionScope   = this@SharedTransitionLayout,

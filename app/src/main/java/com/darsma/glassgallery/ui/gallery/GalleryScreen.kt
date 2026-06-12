@@ -25,6 +25,8 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -43,6 +45,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -71,7 +74,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.foundation.text.BasicTextField
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import coil3.request.ImageRequest
@@ -82,6 +92,7 @@ import com.darsma.glassgallery.data.formatBytes
 import com.darsma.glassgallery.ui.components.BouncyIconButton
 import com.darsma.glassgallery.ui.components.Motion
 import com.darsma.glassgallery.ui.components.MiniPlayer
+import com.darsma.glassgallery.ui.components.glassSheen
 import com.darsma.glassgallery.ui.components.liquidGlassBorder
 import com.darsma.glassgallery.ui.components.pressBounce
 import com.darsma.glassgallery.ui.components.shimmer
@@ -109,29 +120,32 @@ fun GalleryScreen(
     val favorites         by viewModel.favorites.collectAsState()
     val favoritesOnly     by viewModel.showFavoritesOnly.collectAsState()
     val searchQuery       by viewModel.searchQuery.collectAsState()
+    val mediaFilter       by viewModel.mediaFilter.collectAsState()
     val hasMiniPlayer = currentVideo != null
 
     var sortSheetVisible by remember { mutableStateOf(false) }
     var searchExpanded   by remember { mutableStateOf(false) }
 
-    val permission = if (Build.VERSION.SDK_INT >= 33)
-        Manifest.permission.READ_MEDIA_VIDEO
+    val permissions = if (Build.VERSION.SDK_INT >= 33)
+        arrayOf(Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_IMAGES)
     else
-        Manifest.permission.READ_EXTERNAL_STORAGE
+        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
 
     var hasPermission by remember {
-        mutableStateOf(context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED)
+        mutableStateOf(permissions.all {
+            context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
+        })
     }
 
     val permLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasPermission = granted
-        if (granted) viewModel.onPermissionGranted() else viewModel.onPermissionDenied()
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        hasPermission = result.values.all { it }
+        if (hasPermission) viewModel.onPermissionGranted() else viewModel.onPermissionDenied()
     }
 
     LaunchedEffect(Unit) {
-        if (hasPermission) viewModel.onPermissionGranted() else permLauncher.launch(permission)
+        if (hasPermission) viewModel.onPermissionGranted() else permLauncher.launch(permissions)
     }
 
     Box(
@@ -160,11 +174,15 @@ fun GalleryScreen(
                 .statusBarsPadding(),
         ) {
             val successState = uiState as? GalleryUiState.Success
+            val mediaList    = successState?.videos ?: emptyList()
             GalleryHeader(
-                videoCount     = successState?.videos?.size ?: 0,
-                totalSizeBytes = successState?.videos?.sumOf { it.sizeBytes } ?: 0L,
+                videoCount     = mediaList.count { it.isVideo },
+                photoCount     = mediaList.count { !it.isVideo },
+                totalSizeBytes = mediaList.sumOf { it.sizeBytes },
                 favoritesOnly  = favoritesOnly,
                 searchActive   = searchExpanded,
+                searchQuery    = searchQuery,
+                onQueryChange  = { viewModel.setSearchQuery(it) },
                 onToggleFavs   = { viewModel.toggleFavoritesFilter() },
                 onOpenSort     = { sortSheetVisible = true },
                 onToggleSearch = {
@@ -173,15 +191,9 @@ fun GalleryScreen(
                 },
             )
 
-            GallerySearchBar(
-                expanded     = searchExpanded,
-                query        = searchQuery,
-                resultCount  = successState?.videos?.size ?: 0,
-                onQueryChange = { viewModel.setSearchQuery(it) },
-                onClose      = {
-                    searchExpanded = false
-                    viewModel.setSearchQuery("")
-                },
+            MediaFilterTabs(
+                current  = mediaFilter,
+                onSelect = { viewModel.setMediaFilter(it) },
             )
 
             AnimatedContent(
@@ -222,7 +234,7 @@ fun GalleryScreen(
                                 text     = if (favoritesOnly)
                                     "No favorites yet.\nTap the heart on a video to add one."
                                 else
-                                    "No videos found.",
+                                    "No media found.",
                                 color     = Color.White.copy(alpha = 0.55f),
                                 fontSize  = 15.sp,
                                 modifier  = Modifier.padding(32.dp),
@@ -249,6 +261,8 @@ fun GalleryScreen(
                                     video       = video,
                                     index       = index,
                                     isFavorite  = video.id in favorites,
+                                    sharedTransitionScope   = sharedTransitionScope,
+                                    animatedVisibilityScope = animatedVisibilityScope,
                                     onClick     = { onVideoClick(video) },
                                     onToggleFav = { viewModel.toggleFavorite(video.id) },
                                     modifier    = Modifier.animateItem(
@@ -297,110 +311,289 @@ private fun CenterBox(content: @Composable () -> Unit) {
 @Composable
 private fun GalleryHeader(
     videoCount: Int,
+    photoCount: Int,
     totalSizeBytes: Long,
     favoritesOnly: Boolean,
     searchActive: Boolean,
+    searchQuery: String,
+    onQueryChange: (String) -> Unit,
     onToggleFavs: () -> Unit,
     onOpenSort: () -> Unit,
     onToggleSearch: () -> Unit,
 ) {
-    Row(
+    // One spring drives the entire container-transform: 0 = a 44 dp circular
+    // icon button, 1 = a full-width pill search field. Everything else in the
+    // header recedes in lock-step with the same value.
+    val searchProgress by animateFloatAsState(
+        targetValue   = if (searchActive) 1f else 0f,
+        animationSpec = Motion.expressive(),
+        label         = "search-morph",
+    )
+
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 22.dp, end = 16.dp, top = 18.dp, bottom = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text       = stringResource(R.string.app_name),
-                fontSize   = 32.sp,
-                fontWeight = FontWeight.Bold,
-                style      = MaterialTheme.typography.headlineLarge.copy(
-                    brush = Brush.linearGradient(
-                        colors = listOf(Color(0xFFF3EEFF), Color(0xFFBBA6F2)),
-                    ),
-                ),
-            )
-            Spacer(Modifier.height(4.dp))
-            // Subtitle cross-fades whenever the count/size changes.
-            AnimatedContent(
-                targetState    = videoCount to totalSizeBytes,
-                transitionSpec = {
-                    (fadeIn(Motion.standard()) togetherWith fadeOut(Motion.snappy()))
+        val fullWidth = maxWidth
+
+        // ── Layer 1: title + chrome — recedes as the search bar grows ────
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer {
+                    alpha        = (1f - searchProgress).coerceIn(0f, 1f)
+                    translationX = -30f * searchProgress
                 },
-                label = "gallery-subtitle",
-            ) { (count, size) ->
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text     = when (count) {
-                        0    -> if (favoritesOnly) "No favorites" else "Your library"
-                        else -> "$count ${if (count == 1) "video" else "videos"}  ·  ${formatBytes(size)}"
+                    text       = stringResource(R.string.app_name),
+                    fontSize   = 32.sp,
+                    fontWeight = FontWeight.Bold,
+                    style      = MaterialTheme.typography.headlineLarge.copy(
+                        brush = Brush.linearGradient(
+                            colors = listOf(Color(0xFFF3EEFF), Color(0xFFBBA6F2)),
+                        ),
+                    ),
+                )
+                Spacer(Modifier.height(4.dp))
+                AnimatedContent(
+                    targetState    = Triple(videoCount, photoCount, totalSizeBytes),
+                    transitionSpec = {
+                        (fadeIn(Motion.standard()) togetherWith fadeOut(Motion.snappy()))
                     },
-                    fontSize = 13.sp,
-                    color    = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.50f),
-                )
+                    label = "gallery-subtitle",
+                ) { (videos, photos, size) ->
+                    Text(
+                        text     = when {
+                            videos == 0 && photos == 0 ->
+                                if (favoritesOnly) "No favorites" else "Your library"
+                            else ->
+                                "$videos videos  ·  $photos photos  ·  ${formatBytes(size)}"
+                        },
+                        fontSize = 13.sp,
+                        color    = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.50f),
+                    )
+                }
             }
-        }
 
-        // Search toggle.
-        val searchTint by animateFloatAsState(
-            targetValue   = if (searchActive) 1f else 0f,
-            animationSpec = Motion.standard(),
-            label         = "search-tint",
-        )
-        BouncyIconButton(
-            onClick    = onToggleSearch,
-            size       = 44.dp,
-            background = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f + 0.22f * searchTint),
-        ) {
-            Icon(
-                imageVector        = Icons.Rounded.Search,
-                contentDescription = "Search videos",
-                tint               = if (searchActive) MaterialTheme.colorScheme.primary else Color.White,
-                modifier           = Modifier.size(21.dp),
+            // Favorites filter toggle.
+            val favTint by animateFloatAsState(
+                targetValue   = if (favoritesOnly) 1f else 0f,
+                animationSpec = Motion.standard(),
+                label         = "fav-filter-tint",
             )
-        }
-        Spacer(Modifier.width(8.dp))
-
-        // Favorites filter toggle.
-        val favTint by animateFloatAsState(
-            targetValue   = if (favoritesOnly) 1f else 0f,
-            animationSpec = Motion.standard(),
-            label         = "fav-filter-tint",
-        )
-        BouncyIconButton(
-            onClick    = onToggleFavs,
-            size       = 44.dp,
-            background = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f + 0.22f * favTint),
-        ) {
-            AnimatedContent(
-                targetState    = favoritesOnly,
-                transitionSpec = {
-                    scaleIn(Motion.bouncy()) + fadeIn(Motion.snappy()) togetherWith
-                        scaleOut(Motion.snappy()) + fadeOut(Motion.snappy())
-                },
-                label = "fav-filter-icon",
-            ) { on ->
+            BouncyIconButton(
+                onClick    = onToggleFavs,
+                size       = 44.dp,
+                background = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f + 0.22f * favTint),
+            ) {
+                AnimatedContent(
+                    targetState    = favoritesOnly,
+                    transitionSpec = {
+                        scaleIn(Motion.bouncy()) + fadeIn(Motion.snappy()) togetherWith
+                            scaleOut(Motion.snappy()) + fadeOut(Motion.snappy())
+                    },
+                    label = "fav-filter-icon",
+                ) { on ->
+                    Icon(
+                        imageVector        = if (on) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                        contentDescription = "Show favorites only",
+                        tint               = if (on) Color(0xFFFF5C8A) else Color.White,
+                        modifier           = Modifier.size(21.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            // Sort button.
+            BouncyIconButton(
+                onClick    = onOpenSort,
+                size       = 44.dp,
+                background = Color.White.copy(alpha = 0.10f),
+            ) {
                 Icon(
-                    imageVector        = if (on) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                    contentDescription = "Show favorites only",
-                    tint               = if (on) Color(0xFFFF5C8A) else Color.White,
-                    modifier           = Modifier.size(21.dp),
+                    imageVector        = Icons.Rounded.SwapVert,
+                    contentDescription = "Sort media",
+                    tint               = Color.White,
+                    modifier           = Modifier.size(22.dp),
                 )
             }
+            Spacer(Modifier.width(8.dp))
+            // Empty seat exactly where the morphing search circle sits.
+            Spacer(Modifier.size(44.dp))
         }
-        Spacer(Modifier.width(8.dp))
-        // Sort button.
-        BouncyIconButton(
-            onClick    = onOpenSort,
-            size       = 44.dp,
-            background = Color.White.copy(alpha = 0.10f),
+
+        // ── Layer 2: the search morph itself ─────────────────────────────
+        // A circle anchored at the row's end that blooms across the full
+        // header width with an expressive overshoot — a true container
+        // transform, not a crossfade.
+        val barWidth  = lerp(44.dp, fullWidth, searchProgress.coerceIn(0f, 1f))
+        val barHeight = lerp(44.dp, 52.dp, searchProgress.coerceIn(0f, 1f))
+
+        val focusRequester = remember { FocusRequester() }
+        val keyboard       = LocalSoftwareKeyboardController.current
+        LaunchedEffect(searchActive) {
+            if (searchActive) {
+                delay(170L)               // let the bloom mostly land first
+                focusRequester.requestFocus()
+            } else {
+                keyboard?.hide()
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .width(barWidth)
+                .height(barHeight)
+                .clip(PillShape)
+                .background(
+                    MaterialTheme.colorScheme.primary.copy(
+                        alpha = 0.10f + 0.12f * searchProgress
+                    )
+                )
+                .glassSheen()
+                .liquidGlassBorder(PillShape)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication        = null,
+                    enabled           = !searchActive,
+                    onClick           = onToggleSearch,
+                ),
+            contentAlignment = Alignment.CenterStart,
         ) {
-            Icon(
-                imageVector        = Icons.Rounded.SwapVert,
-                contentDescription = "Sort videos",
-                tint               = Color.White,
-                modifier           = Modifier.size(22.dp),
-            )
+            Row(
+                modifier          = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // The lens never moves: centered in the collapsed circle, it
+                // becomes the leading icon of the expanded bar.
+                Icon(
+                    imageVector        = Icons.Rounded.Search,
+                    contentDescription = "Search media",
+                    tint               = Color.White,
+                    modifier           = Modifier
+                        .padding(start = 11.dp)
+                        .size(21.dp),
+                )
+                if (searchProgress > 0.25f) {
+                    val contentAlpha = ((searchProgress - 0.25f) / 0.75f).coerceIn(0f, 1f)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 10.dp, end = 4.dp)
+                            .graphicsLayer { alpha = contentAlpha },
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                text     = "Search videos & photos…",
+                                fontSize = 14.sp,
+                                color    = Color.White.copy(alpha = 0.40f),
+                                maxLines = 1,
+                            )
+                        }
+                        BasicTextField(
+                            value         = searchQuery,
+                            onValueChange = onQueryChange,
+                            singleLine    = true,
+                            textStyle     = TextStyle(color = Color.White, fontSize = 14.sp),
+                            cursorBrush   = SolidColor(MaterialTheme.colorScheme.primary),
+                            modifier      = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester),
+                        )
+                    }
+                    Box(modifier = Modifier.graphicsLayer { alpha = contentAlpha }) {
+                        BouncyIconButton(
+                            onClick    = onToggleSearch,
+                            size       = 36.dp,
+                            background = Color.White.copy(alpha = 0.08f),
+                        ) {
+                            Icon(
+                                imageVector        = Icons.Rounded.Close,
+                                contentDescription = "Close search",
+                                tint               = Color.White,
+                                modifier           = Modifier.size(17.dp),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * All / Videos / Photos segmented control. The selected indicator is a glass
+ * pill that glides between segments with an expressive spring — the morphing
+ * heart of media-type switching.
+ */
+@Composable
+private fun MediaFilterTabs(
+    current: MediaFilter,
+    onSelect: (MediaFilter) -> Unit,
+) {
+    val options = listOf(
+        MediaFilter.ALL    to "All",
+        MediaFilter.VIDEOS to "Videos",
+        MediaFilter.PHOTOS to "Photos",
+    )
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 10.dp)
+            .height(42.dp)
+            .clip(PillShape)
+            .background(Color.White.copy(alpha = 0.06f))
+            .liquidGlassBorder(PillShape),
+    ) {
+        val segWidth      = maxWidth / options.size
+        val selectedIndex = options.indexOfFirst { it.first == current }.coerceAtLeast(0)
+        val indicatorX by animateDpAsState(
+            targetValue   = segWidth * selectedIndex,
+            animationSpec = Motion.expressive(),
+            label         = "tab-indicator",
+        )
+        Box(
+            modifier = Modifier
+                .offset(x = indicatorX)
+                .width(segWidth)
+                .fillMaxHeight()
+                .padding(4.dp)
+                .clip(PillShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.30f))
+                .liquidGlassBorder(PillShape),
+        )
+        Row(Modifier.fillMaxSize()) {
+            options.forEach { (filter, label) ->
+                val selected = filter == current
+                val textAlpha by animateFloatAsState(
+                    targetValue   = if (selected) 1f else 0.55f,
+                    animationSpec = Motion.standard(),
+                    label         = "tab-text-alpha",
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication        = null,
+                        ) { onSelect(filter) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text       = label,
+                        fontSize   = 13.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        color      = Color.White.copy(alpha = textAlpha),
+                    )
+                }
+            }
         }
     }
 }
@@ -410,6 +603,8 @@ private fun VideoCard(
     video: Video,
     index: Int,
     isFavorite: Boolean,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope,
     onClick: () -> Unit,
     onToggleFav: () -> Unit,
     modifier: Modifier = Modifier,
@@ -436,6 +631,19 @@ private fun VideoCard(
         label         = "card-appear",
     )
 
+    // Photos get a true grid→fullscreen container morph. The key lives only
+    // here and in PhotoViewerScreen — the video morph keys stay untouched on
+    // the MiniPlayer/player pair.
+    val photoMorph = if (!video.isVideo) {
+        with(sharedTransitionScope) {
+            Modifier.sharedBounds(
+                sharedContentState      = rememberSharedContentState("photo-${video.id}"),
+                animatedVisibilityScope = animatedVisibilityScope,
+                boundsTransform         = { _, _ -> Motion.expressive() },
+            )
+        }
+    } else Modifier
+
     Box(
         modifier = modifier
             .graphicsLayer {
@@ -448,6 +656,7 @@ private fun VideoCard(
             }
             .pressBounce(cardInteraction, pressedScale = 0.955f, spec = Motion.standard())
             .aspectRatio(16f / 9f)
+            .then(photoMorph)
             .clip(cardShape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable(
@@ -498,24 +707,26 @@ private fun VideoCard(
                 )
         )
 
-        // Centered glass play affordance.
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .size(44.dp)
-                .clip(PillShape)
-                .background(Color.Black.copy(alpha = 0.30f))
-                .liquidGlassBorder(PillShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector        = Icons.Rounded.PlayArrow,
-                contentDescription = null,
-                tint               = Color.White,
-                modifier           = Modifier
-                    .size(24.dp)
-                    .padding(start = 2.dp),
-            )
+        // Centered glass play affordance — videos only.
+        if (video.isVideo) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(44.dp)
+                    .clip(PillShape)
+                    .background(Color.Black.copy(alpha = 0.30f))
+                    .liquidGlassBorder(PillShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector        = Icons.Rounded.PlayArrow,
+                    contentDescription = null,
+                    tint               = Color.White,
+                    modifier           = Modifier
+                        .size(24.dp)
+                        .padding(start = 2.dp),
+                )
+            }
         }
 
         // Favorite heart — top-right.
@@ -545,6 +756,7 @@ private fun VideoCard(
         InfoBadge(
             durationMs = video.duration,
             sizeBytes  = video.sizeBytes,
+            isVideo    = video.isVideo,
             modifier   = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 9.dp, bottom = 9.dp),
@@ -614,6 +826,7 @@ private fun FavoriteHeart(
 private fun InfoBadge(
     durationMs: Long,
     sizeBytes: Long,
+    isVideo: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -623,7 +836,10 @@ private fun InfoBadge(
             .padding(horizontal = 7.dp, vertical = 3.dp),
     ) {
         Text(
-            text       = "${formatDuration(durationMs)}  ·  ${formatBytes(sizeBytes)}",
+            text       = if (isVideo)
+                "${formatDuration(durationMs)}  ·  ${formatBytes(sizeBytes)}"
+            else
+                formatBytes(sizeBytes),
             fontSize   = 10.sp,
             fontWeight = FontWeight.Medium,
             color      = Color.White,

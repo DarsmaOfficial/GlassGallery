@@ -84,6 +84,8 @@ import com.darsma.glassgallery.data.PlaybackStore
 import com.darsma.glassgallery.data.Video
 import com.darsma.glassgallery.ui.components.BouncyIconButton
 import com.darsma.glassgallery.ui.components.Motion
+import com.darsma.glassgallery.ui.components.MorphingPlayPauseButton
+import com.darsma.glassgallery.ui.components.favoriteBurst
 import com.darsma.glassgallery.ui.components.glassSheen
 import com.darsma.glassgallery.ui.components.SmoothSeekBar
 import com.darsma.glassgallery.ui.components.liquidGlass
@@ -392,6 +394,7 @@ fun PlayerScreen(
 
                     SmoothSeekBar(
                         progress     = progress,
+                        isPlaying    = isPlaying,
                         onScrubStart = { isSeeking = true },
                         onScrub      = { f -> seekPreview = (f * durationMs).toLong() },
                         onScrubEnd   = { f ->
@@ -412,9 +415,11 @@ fun PlayerScreen(
                             color = Color.White,
                         )
                         Spacer(Modifier.weight(1f))
-                        PlayPauseButton(
+                        MorphingPlayPauseButton(
                             isPlaying = isPlaying,
                             onClick   = { if (player.isPlaying) player.pause() else player.play() },
+                            size      = 68.dp,
+                            iconSize  = 38.dp,
                         )
                         Spacer(Modifier.weight(1f))
                         Text(
@@ -500,6 +505,7 @@ private fun FavoriteButton(isFavorite: Boolean, onToggle: () -> Unit) {
         modifier = Modifier
             .pressBounce(interaction, pressedScale = 0.78f, spec = Motion.snappy())
             .size(46.dp)
+            .favoriteBurst(isFavorite)
             .clip(CircleShape)
             .background(
                 if (isFavorite) Color(0xFFFF5C8A).copy(alpha = 0.16f)
@@ -570,42 +576,6 @@ private fun SpeedPill(currentSpeed: Float, onSpeedChange: (Float) -> Unit) {
                 fontSize   = 13.sp,
                 fontWeight = FontWeight.Bold,
                 color      = MaterialTheme.colorScheme.primary,
-            )
-        }
-    }
-}
-
-// ── Play / Pause button ───────────────────────────────────────────────────────
-
-@Composable
-private fun PlayPauseButton(isPlaying: Boolean, onClick: () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    Box(
-        modifier = Modifier
-            .pressBounce(interaction, pressedScale = 0.82f, spec = Motion.snappy())
-            .size(64.dp)
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.16f))
-            .clickable(
-                interactionSource = interaction,
-                indication        = null,
-                onClick           = onClick,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        AnimatedContent(
-            targetState    = isPlaying,
-            transitionSpec = {
-                scaleIn(Motion.bouncy(), initialScale = 0.6f) + fadeIn(Motion.snappy()) togetherWith
-                    scaleOut(Motion.snappy(), targetScale = 0.6f) + fadeOut(Motion.snappy())
-            },
-            label = "play-pause-icon",
-        ) { playing ->
-            Icon(
-                imageVector        = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                contentDescription = if (playing) "Pause" else "Play",
-                tint               = Color.White,
-                modifier           = Modifier.size(38.dp),
             )
         }
     }

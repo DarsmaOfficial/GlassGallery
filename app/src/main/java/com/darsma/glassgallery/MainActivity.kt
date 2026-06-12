@@ -92,8 +92,14 @@ private fun GlassGalleryNavHost() {
                 route     = "player/{videoId}",
                 arguments = listOf(navArgument("videoId") { type = NavType.LongType }),
                 enterTransition     = {
-                    slideInVertically(
-                        initialOffsetY = { it / 6 },
+                    // Zoom-morph: the player blooms up from 86% with a soft
+                    // overshoot while rising slightly — reads as the content
+                    // morphing open rather than a screen sliding in.
+                    scaleIn(
+                        initialScale  = 0.86f,
+                        animationSpec = spring(dampingRatio = 0.75f, stiffness = 280f),
+                    ) + slideInVertically(
+                        initialOffsetY = { it / 10 },
                         animationSpec  = spring(dampingRatio = 0.85f, stiffness = 300f),
                     ) + fadeIn(spring(stiffness = 300f))
                 },

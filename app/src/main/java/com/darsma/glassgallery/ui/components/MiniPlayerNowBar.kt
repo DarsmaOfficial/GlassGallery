@@ -203,39 +203,14 @@ fun MiniPlayer(
 
                     Spacer(Modifier.width(12.dp))
 
-                    // ── Play / Pause ──────────────────────────────────────
-                    Box(
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(PillShape)
-                            .background(
-                                Brush.radialGradient(
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.50f),
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                                    )
-                                )
-                            )
-                            .liquidGlassBorder(PillShape)
-                            .clickable(onClick = onPlayPause),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        AnimatedContent(
-                            targetState    = isPlaying,
-                            transitionSpec = {
-                                scaleIn(Motion.bouncy(), initialScale = 0.6f) + fadeIn(Motion.snappy()) togetherWith
-                                    scaleOut(Motion.snappy(), targetScale = 0.6f) + fadeOut(Motion.snappy())
-                            },
-                            label = "mini-play-icon",
-                        ) { playing ->
-                            Icon(
-                                imageVector        = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                contentDescription = null,
-                                tint               = Color.White,
-                                modifier           = Modifier.size(26.dp),
-                            )
-                        }
-                    }
+                    // ── Play / Pause — live morphing scallop ──────────────
+                    MorphingPlayPauseButton(
+                        isPlaying = isPlaying,
+                        onClick   = onPlayPause,
+                        size      = 48.dp,
+                        iconSize  = 24.dp,
+                        color     = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
+                    )
                 }
 
                 // Hairline glass edge over the whole capsule.

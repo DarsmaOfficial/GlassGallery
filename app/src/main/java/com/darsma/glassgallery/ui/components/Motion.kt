@@ -18,6 +18,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -100,11 +101,19 @@ fun BouncyIconButton(
     content: @Composable () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    // Circle <-> rounded-square morph: the button's silhouette squares off
+    // slightly under the finger, then relaxes back to a circle.
+    val cornerPct by animateFloatAsState(
+        targetValue   = if (pressed) 32f else 50f,
+        animationSpec = Motion.standard(),
+        label         = "icon-btn-corner",
+    )
     Box(
         modifier = modifier
             .pressBounce(interaction, pressedScale, Motion.snappy())
             .size(size)
-            .clip(CircleShape)
+            .clip(RoundedCornerShape(percent = cornerPct.toInt().coerceIn(0, 50)))
             .background(background)
             .clickable(
                 interactionSource = interaction,

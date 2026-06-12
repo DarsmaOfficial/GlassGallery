@@ -21,6 +21,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -83,6 +85,7 @@ import com.darsma.glassgallery.ui.components.MiniPlayer
 import com.darsma.glassgallery.ui.components.liquidGlassBorder
 import com.darsma.glassgallery.ui.components.pressBounce
 import com.darsma.glassgallery.ui.components.shimmer
+import com.darsma.glassgallery.ui.components.favoriteBurst
 import kotlinx.coroutines.delay
 
 private val CardShape = RoundedCornerShape(20.dp)
@@ -412,6 +415,15 @@ private fun VideoCard(
     modifier: Modifier = Modifier,
 ) {
     val cardInteraction = remember { MutableInteractionSource() }
+    val cardPressed by cardInteraction.collectIsPressedAsState()
+    // The card's silhouette itself morphs on touch: corners swell outward
+    // with the press and spring back on release.
+    val cardCorner by animateDpAsState(
+        targetValue   = if (cardPressed) 32.dp else 20.dp,
+        animationSpec = Motion.expressive(),
+        label         = "card-corner",
+    )
+    val cardShape = RoundedCornerShape(cardCorner)
 
     var appeared by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -436,7 +448,7 @@ private fun VideoCard(
             }
             .pressBounce(cardInteraction, pressedScale = 0.955f, spec = Motion.standard())
             .aspectRatio(16f / 9f)
-            .clip(CardShape)
+            .clip(cardShape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable(
                 interactionSource = cardInteraction,
@@ -541,7 +553,7 @@ private fun VideoCard(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .liquidGlassBorder(CardShape)
+                .liquidGlassBorder(cardShape)
         )
     }
 }
@@ -563,6 +575,7 @@ private fun FavoriteHeart(
         modifier = modifier
             .pressBounce(interaction, pressedScale = 0.78f, spec = Motion.snappy())
             .size(32.dp)
+            .favoriteBurst(isFavorite)
             .clip(RoundedCornerShape(50))
             .background(Color.Black.copy(alpha = 0.34f))
             .clickable(

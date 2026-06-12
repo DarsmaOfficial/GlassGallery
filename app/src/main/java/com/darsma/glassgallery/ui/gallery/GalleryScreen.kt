@@ -41,7 +41,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,6 +67,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -90,7 +95,10 @@ import coil3.request.crossfade
 import com.darsma.glassgallery.R
 import com.darsma.glassgallery.data.Video
 import com.darsma.glassgallery.data.formatBytes
+import com.darsma.glassgallery.ui.components.AuroraBackground
 import com.darsma.glassgallery.ui.components.BouncyIconButton
+import com.darsma.glassgallery.ui.components.LiquidTabBar
+import com.darsma.glassgallery.ui.components.liquidGlass
 import com.darsma.glassgallery.ui.components.Motion
 import com.darsma.glassgallery.ui.components.MiniPlayer
 import com.darsma.glassgallery.ui.components.glassSheen
@@ -149,54 +157,33 @@ fun GalleryScreen(
         if (hasPermission) viewModel.onPermissionGranted() else permLauncher.launch(permissions)
     }
 
+    // Hoisted grid state — drives the scroll-aware glass header.
+    val gridState = rememberLazyGridState()
+    val headerScrolled by remember {
+        derivedStateOf {
+            gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 16
+        }
+    }
+    val headerGlass by animateFloatAsState(
+        targetValue   = if (headerScrolled) 1f else 0f,
+        animationSpec = Motion.standard(),
+        label         = "header-glass",
+    )
+    // Photos tab switches the grid to a tight 3-column square mosaic;
+    // animateItem morphs every tile into its new position.
+    val compactGrid = mediaFilter == MediaFilter.PHOTOS
+    val topInset    = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(280.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF1C1538),
-                            Color(0xFF120F22),
-                            Color.Transparent,
-                        )
-                    )
-                )
-        )
+        // Drifting ambient colour the glass can "refract".
+        AuroraBackground()
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
-        ) {
-            val successState = uiState as? GalleryUiState.Success
-            val mediaList    = successState?.videos ?: emptyList()
-            GalleryHeader(
-                videoCount     = mediaList.count { it.isVideo },
-                photoCount     = mediaList.count { !it.isVideo },
-                totalSizeBytes = mediaList.sumOf { it.sizeBytes },
-                favoritesOnly  = favoritesOnly,
-                searchActive   = searchExpanded,
-                searchQuery    = searchQuery,
-                onQueryChange  = { viewModel.setSearchQuery(it) },
-                onToggleFavs   = { viewModel.toggleFavoritesFilter() },
-                onOpenSort     = { sortSheetVisible = true },
-                onToggleSearch = {
-                    searchExpanded = !searchExpanded
-                    if (!searchExpanded) viewModel.setSearchQuery("")
-                },
-            )
-
-            MediaFilterTabs(
-                current  = mediaFilter,
-                onSelect = { viewModel.setMediaFilter(it) },
-            )
-
+        // ── Content layer: scrolls edge-to-edge under the floating chrome ──
+        Box(Modifier.fillMaxSize()) {
             AnimatedContent(
                 targetState    = uiState,
                 contentKey     = { it::class },
@@ -242,17 +229,19 @@ fun GalleryScreen(
                             )
                         }
                     } else {
+                        val gap = if (compactGrid) 4.dp else 14.dp
                         LazyVerticalGrid(
-                            columns               = GridCells.Fixed(2),
+                            columns               = GridCells.Fixed(if (compactGrid) 3 else 2),
+                            state                 = gridState,
                             modifier              = Modifier.fillMaxSize(),
                             contentPadding         = PaddingValues(
-                                start  = 14.dp,
-                                end    = 14.dp,
-                                top    = 4.dp,
-                                bottom = if (hasMiniPlayer) MINI_PLAYER_HEIGHT + 18.dp else 18.dp,
+                                start  = gap,
+                                end    = gap,
+                                top    = topInset + 112.dp,
+                                bottom = 86.dp + if (hasMiniPlayer) MINI_PLAYER_HEIGHT else 0.dp,
                             ),
-                            verticalArrangement    = Arrangement.spacedBy(14.dp),
-                            horizontalArrangement  = Arrangement.spacedBy(14.dp),
+                            verticalArrangement    = Arrangement.spacedBy(gap),
+                            horizontalArrangement  = Arrangement.spacedBy(gap),
                         ) {
                             itemsIndexed(
                                 items = state.videos,
@@ -262,12 +251,13 @@ fun GalleryScreen(
                                     video       = video,
                                     index       = index,
                                     isFavorite  = video.id in favorites,
+                                    compact     = compactGrid,
                                     sharedTransitionScope   = sharedTransitionScope,
                                     animatedVisibilityScope = animatedVisibilityScope,
                                     onClick     = { onVideoClick(video) },
                                     onToggleFav = { viewModel.toggleFavorite(video.id) },
                                     modifier    = Modifier.animateItem(
-                                        placementSpec = Motion.standard(),
+                                        placementSpec = Motion.expressive(),
                                     ),
                                 )
                             }
@@ -276,6 +266,32 @@ fun GalleryScreen(
                 }
             }
             }
+        }
+
+        // ── Floating glass header: transparent at rest, frosts on scroll ──
+        val successState = uiState as? GalleryUiState.Success
+        val mediaList    = successState?.videos ?: emptyList()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF0B0918).copy(alpha = 0.74f * headerGlass))
+                .statusBarsPadding(),
+        ) {
+            GalleryHeader(
+                videoCount     = mediaList.count { it.isVideo },
+                photoCount     = mediaList.count { !it.isVideo },
+                totalSizeBytes = mediaList.sumOf { it.sizeBytes },
+                favoritesOnly  = favoritesOnly,
+                searchActive   = searchExpanded,
+                searchQuery    = searchQuery,
+                onQueryChange  = { viewModel.setSearchQuery(it) },
+                onToggleFavs   = { viewModel.toggleFavoritesFilter() },
+                onOpenSort     = { sortSheetVisible = true },
+                onToggleSearch = {
+                    searchExpanded = !searchExpanded
+                    if (!searchExpanded) viewModel.setSearchQuery("")
+                },
+            )
         }
 
         MiniPlayer(
@@ -288,7 +304,24 @@ fun GalleryScreen(
             animatedVisibilityScope = animatedVisibilityScope,
             modifier                = Modifier
                 .align(Alignment.BottomCenter)
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                .padding(bottom = 62.dp),
+        )
+
+        // ── Floating liquid-glass tab bar, Apple Photos style ──────────────
+        LiquidTabBar(
+            options       = listOf("All", "Videos", "Photos"),
+            selectedIndex = when (mediaFilter) {
+                MediaFilter.ALL    -> 0
+                MediaFilter.VIDEOS -> 1
+                MediaFilter.PHOTOS -> 2
+            },
+            onSelect      = { index -> viewModel.setMediaFilter(MediaFilter.entries[index]) },
+            modifier      = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 10.dp)
+                .fillMaxWidth(0.64f),
         )
 
         // Sort bottom-sheet overlays everything.
@@ -609,13 +642,18 @@ private fun VideoCard(
     onClick: () -> Unit,
     onToggleFav: () -> Unit,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     val cardInteraction = remember { MutableInteractionSource() }
     val cardPressed by cardInteraction.collectIsPressedAsState()
     // The card's silhouette itself morphs on touch: corners swell outward
     // with the press and spring back on release.
     val cardCorner by animateDpAsState(
-        targetValue   = if (cardPressed) 32.dp else 20.dp,
+        targetValue   = when {
+            cardPressed -> if (compact) 24.dp else 32.dp
+            compact     -> 12.dp
+            else        -> 20.dp
+        },
         animationSpec = Motion.expressive(),
         label         = "card-corner",
     )
@@ -656,7 +694,7 @@ private fun VideoCard(
                 scaleY = sc
             }
             .pressBounce(cardInteraction, pressedScale = 0.955f, spec = Motion.standard())
-            .aspectRatio(16f / 9f)
+            .aspectRatio(if (compact) 1f else 16f / 9f)
             .then(photoMorph)
             .clip(cardShape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
@@ -696,17 +734,19 @@ private fun VideoCard(
             )
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0.00f to Color.Transparent,
-                        0.48f to Color.Transparent,
-                        1.00f to Color.Black.copy(alpha = 0.78f),
+        if (!compact) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0.00f to Color.Transparent,
+                            0.48f to Color.Transparent,
+                            1.00f to Color.Black.copy(alpha = 0.78f),
+                        )
                     )
-                )
-        )
+            )
+        }
 
         // Centered glass play affordance — videos only.
         if (video.isVideo) {
@@ -736,32 +776,34 @@ private fun VideoCard(
             onToggle   = onToggleFav,
             modifier   = Modifier
                 .align(Alignment.TopEnd)
-                .padding(7.dp),
+                .padding(if (compact) 5.dp else 7.dp),
         )
 
-        // Title.
-        Text(
-            text       = video.title,
-            style      = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color      = Color.White,
-            maxLines   = 1,
-            overflow   = TextOverflow.Ellipsis,
-            modifier   = Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth(0.62f)
-                .padding(start = 11.dp, bottom = 10.dp),
-        )
+        if (!compact) {
+            // Title.
+            Text(
+                text       = video.title,
+                style      = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color      = Color.White,
+                maxLines   = 1,
+                overflow   = TextOverflow.Ellipsis,
+                modifier   = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth(0.62f)
+                    .padding(start = 11.dp, bottom = 10.dp),
+            )
 
-        // Duration + size badge — bottom-right.
-        InfoBadge(
-            durationMs = video.duration,
-            sizeBytes  = video.sizeBytes,
-            isVideo    = video.isVideo,
-            modifier   = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 9.dp, bottom = 9.dp),
-        )
+            // Duration + size badge — bottom-right.
+            InfoBadge(
+                durationMs = video.duration,
+                sizeBytes  = video.sizeBytes,
+                isVideo    = video.isVideo,
+                modifier   = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 9.dp, bottom = 9.dp),
+            )
+        }
 
         Box(
             modifier = Modifier

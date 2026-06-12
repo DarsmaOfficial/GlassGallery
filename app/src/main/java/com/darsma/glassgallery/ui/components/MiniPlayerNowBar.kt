@@ -124,6 +124,7 @@ fun MiniPlayer(
                         )
                     )
                     .glassSheen()
+                    .liquidHighlight()
                     .clickable(
                         interactionSource = interaction,
                         indication        = null,

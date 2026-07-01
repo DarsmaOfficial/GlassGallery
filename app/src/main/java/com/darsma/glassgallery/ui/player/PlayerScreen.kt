@@ -500,6 +500,12 @@ fun PlayerScreen(
                     }
                 }
             }
+
+            MediaDetailsSheet(
+                visible   = detailsVisible,
+                video     = video,
+                onDismiss = { detailsVisible = false },
+            )
         }
     }
 }
@@ -531,12 +537,6 @@ private fun InfoChip(label: String, value: String) {
                 fontSize   = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 color      = Color.White,
-            )
-
-            MediaDetailsSheet(
-                visible   = detailsVisible,
-                video     = video,
-                onDismiss = { detailsVisible = false },
             )
         }
     }

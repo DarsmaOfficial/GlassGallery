@@ -20,7 +20,11 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import android.app.Activity
 import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -43,6 +47,8 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -84,6 +90,7 @@ import com.darsma.glassgallery.data.PlaybackStore
 import com.darsma.glassgallery.data.Video
 import com.darsma.glassgallery.ui.components.BouncyIconButton
 import com.darsma.glassgallery.ui.components.Motion
+import com.darsma.glassgallery.ui.components.MediaDetailsSheet
 import com.darsma.glassgallery.ui.components.MorphingPlayPauseButton
 import com.darsma.glassgallery.ui.components.favoriteBurst
 import com.darsma.glassgallery.ui.components.glassSheen
@@ -212,6 +219,19 @@ fun PlayerScreen(
 
     var controlsVisible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { delay(220L); controlsVisible = true }
+
+    var detailsVisible by remember { mutableStateOf(false) }
+
+    // System-confirmed delete: MediaStore shows the OS dialog, and on OK we
+    // prune the item from the gallery and leave the player.
+    val deleteLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            galleryViewModel.removeFromList(setOf(videoId))
+            onBack()
+        }
+    }
 
     // Auto-hide the chrome while playback runs, like a polished video player.
     // Pausing or scrubbing keeps the controls on screen; a single tap on the
@@ -367,6 +387,31 @@ fun PlayerScreen(
                     ) {
                         Icon(Icons.Rounded.Share, "Share", tint = Color.White)
                     }
+                    Spacer(Modifier.width(2.dp))
+                    BouncyIconButton(
+                        onClick = { detailsVisible = true },
+                        size    = 46.dp,
+                    ) {
+                        Icon(Icons.Rounded.Info, "Details", tint = Color.White)
+                    }
+                    Spacer(Modifier.width(2.dp))
+                    BouncyIconButton(
+                        onClick = {
+                            val pi = android.provider.MediaStore.createDeleteRequest(
+                                context.contentResolver, listOf(videoUri)
+                            )
+                            deleteLauncher.launch(
+                                IntentSenderRequest.Builder(pi.intentSender).build()
+                            )
+                        },
+                        size = 46.dp,
+                    ) {
+                        Icon(
+                            Icons.Rounded.Delete,
+                            "Delete",
+                            tint = Color(0xFFFF7A7A),
+                        )
+                    }
                 }
             }
 
@@ -486,6 +531,12 @@ private fun InfoChip(label: String, value: String) {
                 fontSize   = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 color      = Color.White,
+            )
+
+            MediaDetailsSheet(
+                visible   = detailsVisible,
+                video     = video,
+                onDismiss = { detailsVisible = false },
             )
         }
     }

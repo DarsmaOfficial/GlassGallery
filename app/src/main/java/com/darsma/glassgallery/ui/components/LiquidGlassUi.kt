@@ -15,6 +15,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,7 +39,11 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -162,6 +169,7 @@ fun LiquidTabBar(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    icons: List<ImageVector>? = null,
 ) {
     BoxWithConstraints(
         modifier = modifier
@@ -172,6 +180,7 @@ fun LiquidTabBar(
             .liquidHighlight()
             .liquidGlassBorder(BarShape),
     ) {
+        val haptic   = LocalHapticFeedback.current
         val segWidth = maxWidth / options.size
         val segPx    = with(LocalDensity.current) { segWidth.toPx() }
         val density  = LocalDensity.current
@@ -214,15 +223,41 @@ fun LiquidTabBar(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication        = null,
-                        ) { onSelect(index) },
+                        ) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSelect(index)
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text       = label,
-                        fontSize   = 13.sp,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                        color      = Color.White.copy(alpha = textAlpha),
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (icons != null) {
+                            // Icons breathe: they pop up in scale as their tab
+                            // becomes selected, then relax.
+                            val iconScale by animateFloatAsState(
+                                targetValue   = if (selected) 1.18f else 1f,
+                                animationSpec = Motion.bouncy(),
+                                label         = "liquid-tab-icon",
+                            )
+                            Icon(
+                                imageVector        = icons[index],
+                                contentDescription = null,
+                                tint               = Color.White.copy(alpha = textAlpha),
+                                modifier           = Modifier
+                                    .size(15.dp)
+                                    .graphicsLayer {
+                                        scaleX = iconScale
+                                        scaleY = iconScale
+                                    },
+                            )
+                            Spacer(Modifier.width(5.dp))
+                        }
+                        Text(
+                            text       = label,
+                            fontSize   = 13.sp,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            color      = Color.White.copy(alpha = textAlpha),
+                        )
+                    }
                 }
             }
         }

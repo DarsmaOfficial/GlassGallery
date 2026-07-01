@@ -52,6 +52,10 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private val _mediaFilter = MutableStateFlow(MediaFilter.ALL)
     val mediaFilter: StateFlow<MediaFilter> = _mediaFilter.asStateFlow()
 
+    /** Multi-select mode: ids currently selected in the grid. */
+    private val _selectedIds = MutableStateFlow<Set<Long>>(emptySet())
+    val selectedIds: StateFlow<Set<Long>> = _selectedIds.asStateFlow()
+
     private val _currentVideo = MutableStateFlow<Video?>(null)
     val currentVideo: StateFlow<Video?> = _currentVideo.asStateFlow()
 
@@ -116,6 +120,37 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     fun setMediaFilter(filter: MediaFilter) {
         if (filter == _mediaFilter.value) return
         _mediaFilter.value = filter
+        applyFilters()
+    }
+
+    // ── Selection ──────────────────────────────────────────────────────────
+
+    fun toggleSelection(id: Long) {
+        _selectedIds.value =
+            if (id in _selectedIds.value) _selectedIds.value - id
+            else _selectedIds.value + id
+    }
+
+    fun clearSelection() {
+        _selectedIds.value = emptySet()
+    }
+
+    /** Content uris of everything currently selected, for share/delete. */
+    fun selectedMedia(): List<Video> =
+        rawVideos.filter { it.id in _selectedIds.value }
+
+    /** Mark everything selected as a favorite (never un-favorites). */
+    fun favoriteSelected() {
+        _selectedIds.value
+            .filterNot { it in _favorites.value }
+            .forEach { toggleFavorite(it) }
+    }
+
+    /** Prune deleted items from the in-memory list — no full reload needed. */
+    fun removeFromList(ids: Set<Long>) {
+        rawVideos = rawVideos.filterNot { it.id in ids }
+        if (_currentVideo.value?.id in ids) _currentVideo.value = null
+        _selectedIds.value = emptySet()
         applyFilters()
     }
 

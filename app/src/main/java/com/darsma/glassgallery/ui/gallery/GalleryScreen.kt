@@ -1,11 +1,16 @@
-@file:OptIn(ExperimentalSharedTransitionApi::class)
+@file:OptIn(ExperimentalSharedTransitionApi::class, ExperimentalFoundationApi::class)
 
 package com.darsma.glassgallery.ui.gallery
 
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.app.Activity
+import android.content.Intent
+import android.provider.MediaStore
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -18,7 +23,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -50,7 +58,12 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -81,6 +94,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.SolidColor
@@ -103,6 +119,7 @@ import com.darsma.glassgallery.ui.components.Motion
 import com.darsma.glassgallery.ui.components.MiniPlayer
 import com.darsma.glassgallery.ui.components.glassSheen
 import com.darsma.glassgallery.ui.components.liquidGlassBorder
+import com.darsma.glassgallery.ui.components.liquidHighlight
 import com.darsma.glassgallery.ui.components.pressBounce
 import com.darsma.glassgallery.ui.components.shimmer
 import com.darsma.glassgallery.ui.components.favoriteBurst
@@ -130,6 +147,21 @@ fun GalleryScreen(
     val favoritesOnly     by viewModel.showFavoritesOnly.collectAsState()
     val searchQuery       by viewModel.searchQuery.collectAsState()
     val mediaFilter       by viewModel.mediaFilter.collectAsState()
+    val selectedIds       by viewModel.selectedIds.collectAsState()
+    val selectionMode     = selectedIds.isNotEmpty()
+    val haptic            = LocalHapticFeedback.current
+
+    // Selection mode is dismissible with the system back gesture.
+    BackHandler(enabled = selectionMode) { viewModel.clearSelection() }
+
+    // System-confirmed bulk delete.
+    var pendingDelete by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    val deleteLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) viewModel.removeFromList(pendingDelete)
+        pendingDelete = emptySet()
+    }
     val hasMiniPlayer = currentVideo != null
 
     var sortSheetVisible by remember { mutableStateOf(false) }
@@ -248,16 +280,27 @@ fun GalleryScreen(
                                 key   = { _, video -> video.id },
                             ) { index, video ->
                                 VideoCard(
-                                    video       = video,
-                                    index       = index,
-                                    isFavorite  = video.id in favorites,
-                                    compact     = compactGrid,
+                                    video         = video,
+                                    index         = index,
+                                    isFavorite    = video.id in favorites,
+                                    compact       = compactGrid,
+                                    selected      = video.id in selectedIds,
+                                    selectionMode = selectionMode,
                                     sharedTransitionScope   = sharedTransitionScope,
                                     animatedVisibilityScope = animatedVisibilityScope,
-                                    onClick     = { onVideoClick(video) },
+                                    onClick     = {
+                                        if (selectionMode) viewModel.toggleSelection(video.id)
+                                        else onVideoClick(video)
+                                    },
+                                    onLongPress = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        viewModel.toggleSelection(video.id)
+                                    },
                                     onToggleFav = { viewModel.toggleFavorite(video.id) },
                                     modifier    = Modifier.animateItem(
+                                        fadeInSpec    = Motion.standard(),
                                         placementSpec = Motion.expressive(),
+                                        fadeOutSpec   = Motion.snappy(),
                                     ),
                                 )
                             }
@@ -278,6 +321,7 @@ fun GalleryScreen(
                 .statusBarsPadding(),
         ) {
             GalleryHeader(
+                collapse       = headerGlass,
                 videoCount     = mediaList.count { it.isVideo },
                 photoCount     = mediaList.count { !it.isVideo },
                 totalSizeBytes = mediaList.sumOf { it.sizeBytes },
@@ -309,20 +353,124 @@ fun GalleryScreen(
         )
 
         // ── Floating liquid-glass tab bar, Apple Photos style ──────────────
-        LiquidTabBar(
-            options       = listOf("All", "Videos", "Photos"),
-            selectedIndex = when (mediaFilter) {
-                MediaFilter.ALL    -> 0
-                MediaFilter.VIDEOS -> 1
-                MediaFilter.PHOTOS -> 2
-            },
-            onSelect      = { index -> viewModel.setMediaFilter(MediaFilter.entries[index]) },
-            modifier      = Modifier
+        AnimatedVisibility(
+            visible  = !selectionMode,
+            enter    = slideInVertically(initialOffsetY = { it * 2 }, animationSpec = Motion.expressive()) +
+                       fadeIn(Motion.standard()),
+            exit     = slideOutVertically(targetOffsetY = { it * 2 }, animationSpec = Motion.snappy()) + fadeOut(),
+            modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(bottom = 10.dp)
-                .fillMaxWidth(0.64f),
-        )
+                .padding(bottom = 10.dp),
+        ) {
+            LiquidTabBar(
+                options       = listOf("All", "Videos", "Photos"),
+                icons         = listOf(Icons.Rounded.Apps, Icons.Rounded.PlayArrow, Icons.Rounded.Image),
+                selectedIndex = when (mediaFilter) {
+                    MediaFilter.ALL    -> 0
+                    MediaFilter.VIDEOS -> 1
+                    MediaFilter.PHOTOS -> 2
+                },
+                onSelect      = { index -> viewModel.setMediaFilter(MediaFilter.entries[index]) },
+                modifier      = Modifier.fillMaxWidth(0.72f),
+            )
+        }
+
+        // ── Selection action bar: the tab bar's liquid sibling ─────────────
+        AnimatedVisibility(
+            visible  = selectionMode,
+            enter    = slideInVertically(initialOffsetY = { it * 2 }, animationSpec = Motion.expressive()) +
+                       fadeIn(Motion.standard()),
+            exit     = slideOutVertically(targetOffsetY = { it * 2 }, animationSpec = Motion.snappy()) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 10.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .height(54.dp)
+                    .clip(PillShape)
+                    .liquidGlass(alpha = 0.62f)
+                    .glassSheen()
+                    .liquidHighlight()
+                    .liquidGlassBorder(PillShape)
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AnimatedContent(
+                    targetState    = selectedIds.size,
+                    transitionSpec = {
+                        fadeIn(Motion.snappy()) togetherWith fadeOut(Motion.snappy())
+                    },
+                    label = "sel-count",
+                ) { count ->
+                    Text(
+                        text       = "$count",
+                        fontSize   = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color      = MaterialTheme.colorScheme.primary,
+                        modifier   = Modifier.padding(start = 10.dp),
+                    )
+                }
+                Text(
+                    text     = " selected",
+                    fontSize = 13.sp,
+                    color    = Color.White.copy(alpha = 0.70f),
+                    modifier = Modifier.padding(end = 10.dp),
+                )
+                BouncyIconButton(
+                    onClick = {
+                        val items = viewModel.selectedMedia()
+                        if (items.isNotEmpty()) {
+                            val uris = ArrayList(items.map { it.uri })
+                            val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                                type = "*/*"
+                                putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(intent, "Share media"))
+                        }
+                    },
+                    size = 44.dp,
+                ) {
+                    Icon(Icons.Rounded.Share, "Share selected", tint = Color.White, modifier = Modifier.size(20.dp))
+                }
+                BouncyIconButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        viewModel.favoriteSelected()
+                    },
+                    size = 44.dp,
+                ) {
+                    Icon(Icons.Rounded.Favorite, "Favorite selected", tint = Color(0xFFFF5C8A), modifier = Modifier.size(20.dp))
+                }
+                BouncyIconButton(
+                    onClick = {
+                        val items = viewModel.selectedMedia()
+                        if (items.isNotEmpty()) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            pendingDelete = items.map { it.id }.toSet()
+                            val pi = MediaStore.createDeleteRequest(
+                                context.contentResolver, items.map { it.uri }
+                            )
+                            deleteLauncher.launch(
+                                IntentSenderRequest.Builder(pi.intentSender).build()
+                            )
+                        }
+                    },
+                    size = 44.dp,
+                ) {
+                    Icon(Icons.Rounded.Delete, "Delete selected", tint = Color(0xFFFF7A7A), modifier = Modifier.size(20.dp))
+                }
+                BouncyIconButton(
+                    onClick = { viewModel.clearSelection() },
+                    size    = 44.dp,
+                ) {
+                    Icon(Icons.Rounded.Close, "Exit selection", tint = Color.White, modifier = Modifier.size(19.dp))
+                }
+            }
+        }
 
         // Sort bottom-sheet overlays everything.
         SortSheet(
@@ -344,6 +492,7 @@ private fun CenterBox(content: @Composable () -> Unit) {
 
 @Composable
 private fun GalleryHeader(
+    collapse: Float,
     videoCount: Int,
     photoCount: Int,
     totalSizeBytes: Long,
@@ -391,6 +540,14 @@ private fun GalleryHeader(
                             colors = listOf(Color(0xFFF3EEFF), Color(0xFFBBA6F2)),
                         ),
                     ),
+                    // Large-title collapse: shrinks toward its leading edge as
+                    // the grid scrolls up and the header frosts.
+                    modifier = Modifier.graphicsLayer {
+                        val sc = 1f - 0.22f * collapse
+                        scaleX = sc
+                        scaleY = sc
+                        transformOrigin = TransformOrigin(0f, 0.5f)
+                    },
                 )
                 Spacer(Modifier.height(4.dp))
                 AnimatedContent(
@@ -643,6 +800,9 @@ private fun VideoCard(
     onToggleFav: () -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    selected: Boolean = false,
+    selectionMode: Boolean = false,
+    onLongPress: () -> Unit = {},
 ) {
     val cardInteraction = remember { MutableInteractionSource() }
     val cardPressed by cardInteraction.collectIsPressedAsState()
@@ -658,6 +818,11 @@ private fun VideoCard(
         label         = "card-corner",
     )
     val cardShape = RoundedCornerShape(cardCorner)
+    val selectScale by animateFloatAsState(
+        targetValue   = if (selected) 0.90f else 1f,
+        animationSpec = Motion.expressive(),
+        label         = "card-select-scale",
+    )
 
     var appeared by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -688,8 +853,9 @@ private fun VideoCard(
             .graphicsLayer {
                 alpha        = appear.coerceIn(0f, 1f)
                 translationY = (1f - appear) * 46f
-                // Gentle scale overshoot so each card "lands" with life.
-                val sc = 0.94f + 0.06f * appear
+                // Gentle scale overshoot so each card "lands" with life;
+                // selected tiles additionally sink inward Apple-style.
+                val sc = (0.94f + 0.06f * appear) * selectScale
                 scaleX = sc
                 scaleY = sc
             }
@@ -698,10 +864,11 @@ private fun VideoCard(
             .then(photoMorph)
             .clip(cardShape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(
+            .combinedClickable(
                 interactionSource = cardInteraction,
                 indication        = null,
                 onClick           = onClick,
+                onLongClick       = onLongPress,
             ),
     ) {
         var thumbResolved by remember { mutableStateOf(false) }
@@ -810,6 +977,58 @@ private fun VideoCard(
                 .fillMaxSize()
                 .liquidGlassBorder(cardShape)
         )
+
+        // ── Selection chrome ───────────────────────────────────────────────
+        AnimatedVisibility(
+            visible = selected,
+            enter   = fadeIn(Motion.snappy()),
+            exit    = fadeOut(Motion.snappy()),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
+                    .border(2.dp, MaterialTheme.colorScheme.primary, cardShape)
+            )
+        }
+        AnimatedVisibility(
+            visible  = selectionMode,
+            enter    = scaleIn(Motion.bouncy(), initialScale = 0.4f) + fadeIn(Motion.snappy()),
+            exit     = scaleOut(Motion.snappy(), targetScale = 0.4f) + fadeOut(Motion.snappy()),
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(if (compact) 5.dp else 7.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(23.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(
+                        if (selected) MaterialTheme.colorScheme.primary
+                        else Color.Black.copy(alpha = 0.35f)
+                    )
+                    .border(
+                        width = 1.5.dp,
+                        color = if (selected) MaterialTheme.colorScheme.primary
+                        else Color.White.copy(alpha = 0.75f),
+                        shape = RoundedCornerShape(50),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                AnimatedVisibility(
+                    visible = selected,
+                    enter   = scaleIn(Motion.bouncy(), initialScale = 0.3f) + fadeIn(Motion.snappy()),
+                    exit    = scaleOut(Motion.snappy()) + fadeOut(Motion.snappy()),
+                ) {
+                    Icon(
+                        imageVector        = Icons.Rounded.Check,
+                        contentDescription = null,
+                        tint               = Color(0xFF1A1030),
+                        modifier           = Modifier.size(15.dp),
+                    )
+                }
+            }
+        }
     }
 }
 

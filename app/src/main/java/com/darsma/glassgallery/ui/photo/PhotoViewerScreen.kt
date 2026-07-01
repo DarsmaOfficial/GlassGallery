@@ -5,7 +5,11 @@ package com.darsma.glassgallery.ui.photo
 import android.content.ContentUris
 import android.content.Intent
 import android.provider.MediaStore
+import android.app.Activity
 import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -40,7 +44,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -71,6 +77,7 @@ import coil3.compose.AsyncImage
 import com.darsma.glassgallery.data.MediaStoreVideoSource
 import com.darsma.glassgallery.data.Video
 import com.darsma.glassgallery.ui.components.BouncyIconButton
+import com.darsma.glassgallery.ui.components.MediaDetailsSheet
 import com.darsma.glassgallery.ui.components.Motion
 import com.darsma.glassgallery.ui.components.favoriteBurst
 import com.darsma.glassgallery.ui.components.glassSheen
@@ -109,7 +116,17 @@ fun PhotoViewerScreen(
         ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, photoId)
     }
 
-    var chromeVisible by remember { mutableStateOf(true) }
+    var chromeVisible  by remember { mutableStateOf(true) }
+    var detailsVisible by remember { mutableStateOf(false) }
+
+    val deleteLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            galleryViewModel.removeFromList(setOf(photoId))
+            onBack()
+        }
+    }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     val scope = rememberCoroutineScope()
 
@@ -283,8 +300,35 @@ fun PhotoViewerScreen(
                     ) {
                         Icon(Icons.Rounded.Share, "Share", tint = Color.White)
                     }
+                    Spacer(Modifier.width(2.dp))
+                    BouncyIconButton(
+                        onClick = { detailsVisible = true },
+                        size    = 46.dp,
+                    ) {
+                        Icon(Icons.Rounded.Info, "Details", tint = Color.White)
+                    }
+                    Spacer(Modifier.width(2.dp))
+                    BouncyIconButton(
+                        onClick = {
+                            val pi = MediaStore.createDeleteRequest(
+                                context.contentResolver, listOf(photoUri)
+                            )
+                            deleteLauncher.launch(
+                                IntentSenderRequest.Builder(pi.intentSender).build()
+                            )
+                        },
+                        size = 46.dp,
+                    ) {
+                        Icon(Icons.Rounded.Delete, "Delete", tint = Color(0xFFFF7A7A))
+                    }
                 }
             }
+
+            MediaDetailsSheet(
+                visible   = detailsVisible,
+                video     = photo,
+                onDismiss = { detailsVisible = false },
+            )
         }
     }
 }

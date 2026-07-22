@@ -27,6 +27,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -289,7 +290,7 @@ fun PhotoEditorScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(horizontal = 16.dp, bottom = 14.dp),
+                .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Tools morph between Crop and Adjust decks.
@@ -412,7 +413,7 @@ private fun GlassSlider(
                     }
                 }
                 .pointerInput(trackWidth) {
-                    androidx.compose.foundation.gestures.detectTapGestures { tap ->
+                    detectTapGestures { tap ->
                         if (trackWidth > 0) {
                             val t = (tap.x / trackWidth).coerceIn(0f, 1f)
                             onChange(t * 2f - 1f)

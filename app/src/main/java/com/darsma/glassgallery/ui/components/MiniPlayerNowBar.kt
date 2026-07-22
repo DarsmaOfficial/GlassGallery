@@ -7,9 +7,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -79,11 +77,11 @@ fun MiniPlayer(
         visible = video != null,
         enter = slideInVertically(
             initialOffsetY = { it },
-            animationSpec  = spring(dampingRatio = 0.78f, stiffness = 360f),
-        ) + fadeIn(spring(stiffness = Spring.StiffnessLow)),
+            animationSpec  = Motion.expressive(),
+        ) + fadeIn(Motion.standard()),
         exit = slideOutVertically(
             targetOffsetY = { it },
-            animationSpec = spring(dampingRatio = 0.78f, stiffness = 360f),
+            animationSpec = Motion.expressive(),
         ) + fadeOut(),
         modifier = modifier.fillMaxWidth(),
     ) {
@@ -93,7 +91,7 @@ fun MiniPlayer(
         val pressed by interaction.collectIsPressedAsState()
         val capsuleScale by animateFloatAsState(
             targetValue   = if (pressed) 0.97f else 1f,
-            animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
+            animationSpec = Motion.bouncy(),
             label         = "capsule-scale",
         )
 
@@ -109,7 +107,7 @@ fun MiniPlayer(
                         ),
                         animatedVisibilityScope = animatedVisibilityScope,
                         boundsTransform = { _, _ ->
-                            spring(dampingRatio = 0.82f, stiffness = 340f)
+                            Motion.spatial()
                         },
                     )
                     .scale(capsuleScale)
@@ -123,6 +121,7 @@ fun MiniPlayer(
                             )
                         )
                     )
+                    .opticalGlass(intensity = 0.82f)
                     .glassSheen()
                     .liquidHighlight()
                     .clickable(
@@ -229,10 +228,7 @@ fun MiniPlayer(
 private fun MiniProgressBar(progress: Float) {
     val animatedProgress by animateFloatAsState(
         targetValue   = progress.coerceIn(0f, 1f),
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness    = Spring.StiffnessMediumLow,
-        ),
+        animationSpec = Motion.standard(),
         label         = "mini-progress",
     )
     Box(

@@ -52,6 +52,22 @@ object Motion {
     fun <T> expressive(): FiniteAnimationSpec<T> =
         spring(dampingRatio = 0.72f, stiffness = 300f)
 
+    /** Large surfaces travelling through depth. */
+    fun <T> spatial(): FiniteAnimationSpec<T> =
+        spring(dampingRatio = 0.80f, stiffness = 235f)
+
+    /** Connected glass shapes stretching under surface tension. */
+    fun <T> morph(): FiniteAnimationSpec<T> =
+        spring(dampingRatio = 0.62f, stiffness = 340f)
+
+    /** Fast elastic response for gesture release. */
+    fun <T> elastic(): FiniteAnimationSpec<T> =
+        spring(dampingRatio = 0.56f, stiffness = 470f)
+
+    /** Critically damped final alignment. */
+    fun <T> settle(): FiniteAnimationSpec<T> =
+        spring(dampingRatio = 1f, stiffness = 260f)
+
     /** Playful pop with visible overshoot — for the favorite heart, badges, etc. */
     fun <T> bouncy(): FiniteAnimationSpec<T> =
         spring(dampingRatio = 0.42f, stiffness = 520f)

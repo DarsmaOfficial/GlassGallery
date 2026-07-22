@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -43,6 +44,9 @@ import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.circle
 import androidx.graphics.shapes.star
 import androidx.graphics.shapes.toPath
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * A play/pause control whose *container* is alive. The background is a true
@@ -156,12 +160,44 @@ fun Modifier.favoriteBurst(
     return this.drawBehind {
         val p = progress.value
         if (p < 1f) {
-            val radius = size.minDimension * (0.55f + 1.15f * p)
+            val eased = FastOutSlowInEasing.transform(p.coerceIn(0f, 1f))
+            val fade = (1f - p) * (1f - p)
+            val center = Offset(size.width / 2f, size.height / 2f)
+
+            // Elastic shockwave, kept inside the generous heart touch target.
             drawCircle(
-                color  = color.copy(alpha = (1f - p) * 0.65f),
-                radius = radius,
-                style  = Stroke(width = 3.dp.toPx() * (1f - p) + 1f),
+                color = color.copy(alpha = fade * 0.60f),
+                radius = size.minDimension * (0.25f + 0.21f * eased),
+                center = center,
+                style = Stroke(width = 2.6.dp.toPx() * (1f - p) + 0.6.dp.toPx()),
             )
+
+            // Eight tiny droplets fly out with alternating pink/white glints.
+            repeat(8) { index ->
+                val angle = (index * 45.0 - 90.0) * PI / 180.0
+                val distance = size.minDimension * (0.16f + 0.24f * eased)
+                val trailStartDistance = distance - size.minDimension * (0.07f * (1f - p))
+                val end = Offset(
+                    x = center.x + cos(angle).toFloat() * distance,
+                    y = center.y + sin(angle).toFloat() * distance,
+                )
+                val start = Offset(
+                    x = center.x + cos(angle).toFloat() * trailStartDistance,
+                    y = center.y + sin(angle).toFloat() * trailStartDistance,
+                )
+                val particleColor = if (index % 2 == 0) color else Color.White
+                drawLine(
+                    color = particleColor.copy(alpha = fade * 0.42f),
+                    start = start,
+                    end = end,
+                    strokeWidth = 1.1.dp.toPx() * (1f - p) + 0.25.dp.toPx(),
+                )
+                drawCircle(
+                    color = particleColor.copy(alpha = fade * 0.92f),
+                    radius = 1.9.dp.toPx() * (1f - p) + 0.35.dp.toPx(),
+                    center = end,
+                )
+            }
         }
     }
 }

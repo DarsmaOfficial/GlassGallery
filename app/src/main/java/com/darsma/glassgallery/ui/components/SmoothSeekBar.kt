@@ -2,13 +2,11 @@ package com.darsma.glassgallery.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -66,33 +64,28 @@ fun SmoothSeekBar(
     // Spring-smoothed value the canvas actually draws.
     val animatedProgress by animateFloatAsState(
         targetValue = shownProgress.coerceIn(0f, 1f),
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            // Position now updates every frame, so the spring can track much
-            // tighter without ever looking steppy.
-            stiffness    = if (dragging) Spring.StiffnessHigh else Spring.StiffnessMediumLow,
-        ),
+        animationSpec = if (dragging) Motion.snappy() else Motion.standard(),
         label = "seek-progress",
     )
 
     val trackHeight by animateDpAsState(
         targetValue   = if (dragging) 8.dp else 5.dp,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMediumLow),
+        animationSpec = Motion.expressive(),
         label = "track-height",
     )
     val thumbRadius by animateDpAsState(
         targetValue   = if (dragging) 11.dp else 7.dp,
-        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium),
+        animationSpec = Motion.bouncy(),
         label = "thumb-radius",
     )
     val glowAlpha by animateFloatAsState(
         targetValue   = if (dragging) 0.35f else 0f,
-        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        animationSpec = Motion.standard(),
         label = "thumb-glow",
     )
     val activeAnimated by animateColorAsState(
         targetValue   = if (dragging) Color.White else activeColor,
-        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        animationSpec = Motion.standard(),
         label = "active-color",
     )
 
@@ -102,7 +95,7 @@ fun SmoothSeekBar(
     // line. Amplitude is spring-driven so the transition itself is a morph.
     val waveAmplitude by animateFloatAsState(
         targetValue   = if (!dragging && isPlaying) 1f else 0f,
-        animationSpec = spring(dampingRatio = 1f, stiffness = 110f),
+        animationSpec = Motion.gentle(),
         label = "wave-amp",
     )
     val wavePhase by rememberInfiniteTransition(label = "wave").animateFloat(

@@ -26,7 +26,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -50,7 +51,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Flip
+import androidx.compose.material.icons.rounded.Redo
 import androidx.compose.material.icons.rounded.RotateRight
+import androidx.compose.material.icons.rounded.Undo
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -62,6 +65,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -94,6 +98,18 @@ import kotlin.math.roundToInt
 
 private val ChromeShape = RoundedCornerShape(26.dp)
 private val PillShape   = RoundedCornerShape(50)
+private const val EditorHistoryLimit = 30
+
+private data class EditorSnapshot(
+    val rotationSteps: Float,
+    val flippedH: Boolean,
+    val brightness: Float,
+    val contrast: Float,
+    val saturation: Float,
+    val zoom: Float,
+    val panX: Float,
+    val panY: Float,
+)
 
 /**
  * Basic non-destructive photo editor. Two liquid-morphing modes:
@@ -131,12 +147,78 @@ fun PhotoEditorScreen(
     var contrast   by remember { mutableFloatStateOf(0f) }  // -1..1
     var saturation by remember { mutableFloatStateOf(0f) }  // -1..1
     var saving by remember { mutableStateOf(false) }
+    var comparingOriginal by remember { mutableStateOf(false) }
+    var applyingHistory by remember { mutableStateOf(false) }
+    var undoHistory by remember(photoId) { mutableStateOf<List<EditorSnapshot>>(emptyList()) }
+    var redoHistory by remember(photoId) { mutableStateOf<List<EditorSnapshot>>(emptyList()) }
+    var adjustmentGestureStart by remember { mutableStateOf<EditorSnapshot?>(null) }
 
     // Crop viewport: zoom + pan inside the frame.
     val zoom    = remember { Animatable(1f) }
     val panX    = remember { Animatable(0f) }
     val panY    = remember { Animatable(0f) }
     var frameSize by remember { mutableStateOf(IntSize.Zero) }
+
+    fun snapshot() = EditorSnapshot(
+        rotationSteps = rotationSteps,
+        flippedH = flippedH,
+        brightness = brightness,
+        contrast = contrast,
+        saturation = saturation,
+        zoom = zoom.value,
+        panX = panX.value,
+        panY = panY.value,
+    )
+
+    fun rememberChange(before: EditorSnapshot) {
+        if (applyingHistory) return
+        val after = snapshot()
+        if (after == before) return
+        undoHistory = (undoHistory + before).takeLast(EditorHistoryLimit)
+        redoHistory = emptyList()
+    }
+
+    fun applySnapshot(target: EditorSnapshot) {
+        if (applyingHistory) return
+        applyingHistory = true
+        rotationSteps = target.rotationSteps
+        flippedH = target.flippedH
+        brightness = target.brightness
+        contrast = target.contrast
+        saturation = target.saturation
+        scope.launch {
+            try {
+                zoom.snapTo(target.zoom.coerceIn(1f, 5f))
+                panX.snapTo(target.panX)
+                panY.snapTo(target.panY)
+            } finally {
+                applyingHistory = false
+            }
+        }
+    }
+
+    fun undo() {
+        if (applyingHistory) return
+        val target = undoHistory.lastOrNull() ?: return
+        val current = snapshot()
+        undoHistory = undoHistory.dropLast(1)
+        redoHistory = (redoHistory + current).takeLast(EditorHistoryLimit)
+        applySnapshot(target)
+    }
+
+    fun redo() {
+        if (applyingHistory) return
+        val target = redoHistory.lastOrNull() ?: return
+        val current = snapshot()
+        redoHistory = redoHistory.dropLast(1)
+        undoHistory = (undoHistory + current).takeLast(EditorHistoryLimit)
+        applySnapshot(target)
+    }
+
+    val currentSnapshot = rememberUpdatedState(snapshot())
+    val rememberChangeUpdated = rememberUpdatedState<(EditorSnapshot) -> Unit> { before ->
+        rememberChange(before)
+    }
 
     val rotationAnim by animateFloatAsState(
         targetValue   = rotationSteps * 90f,
@@ -175,9 +257,21 @@ fun PhotoEditorScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = 120.dp, bottom = 240.dp)
+                    .padding(top = 116.dp, bottom = 276.dp)
                     .onSizeChanged { frameSize = it }
                     .clip(RoundedCornerShape(18.dp))
+                    .pointerInput(mode, photoId) {
+                        if (mode == 0) {
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                val before = currentSnapshot.value
+                                do {
+                                    val event = awaitPointerEvent()
+                                } while (event.changes.any { it.pressed })
+                                rememberChangeUpdated.value(before)
+                            }
+                        }
+                    }
                     .transformable(transformState, enabled = mode == 0),
                 contentAlignment = Alignment.Center,
             ) {
@@ -186,16 +280,20 @@ fun PhotoEditorScreen(
                     contentDescription = "Edited photo",
                     contentScale       = ContentScale.Fit,
                     colorFilter        = androidx.compose.ui.graphics.ColorFilter.colorMatrix(
-                        composeColorMatrix(brightness, contrast, saturation)
+                        composeColorMatrix(
+                            if (comparingOriginal) 0f else brightness,
+                            if (comparingOriginal) 0f else contrast,
+                            if (comparingOriginal) 0f else saturation,
+                        )
                     ),
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            scaleX       = zoom.value * flipAnim
-                            scaleY       = zoom.value
-                            translationX = panX.value
-                            translationY = panY.value
-                            rotationZ    = rotationAnim
+                            scaleX = if (comparingOriginal) 1f else zoom.value * flipAnim
+                            scaleY = if (comparingOriginal) 1f else zoom.value
+                            translationX = if (comparingOriginal) 0f else panX.value
+                            translationY = if (comparingOriginal) 0f else panY.value
+                            rotationZ = if (comparingOriginal) 0f else rotationAnim
                         },
                 )
                 // Crop frame lines — visible only in crop mode.
@@ -225,7 +323,7 @@ fun PhotoEditorScreen(
                 .padding(horizontal = 6.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BouncyIconButton(onClick = onBack, size = 46.dp) {
+            BouncyIconButton(onClick = onBack, size = 42.dp) {
                 Icon(Icons.Rounded.Close, "Cancel", tint = Color.White)
             }
             Text(
@@ -233,8 +331,34 @@ fun PhotoEditorScreen(
                 fontSize   = 17.sp,
                 fontWeight = FontWeight.Bold,
                 color      = Color.White,
-                modifier   = Modifier.weight(1f).padding(start = 10.dp),
+                modifier   = Modifier.weight(1f).padding(start = 8.dp),
             )
+            BouncyIconButton(
+                onClick = { if (undoHistory.isNotEmpty()) undo() },
+                size = 38.dp,
+                background = Color.White.copy(alpha = if (undoHistory.isNotEmpty()) 0.10f else 0.04f),
+            ) {
+                Icon(
+                    Icons.Rounded.Undo,
+                    "Undo",
+                    tint = Color.White.copy(alpha = if (undoHistory.isNotEmpty()) 0.92f else 0.28f),
+                    modifier = Modifier.size(19.dp),
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+            BouncyIconButton(
+                onClick = { if (redoHistory.isNotEmpty()) redo() },
+                size = 38.dp,
+                background = Color.White.copy(alpha = if (redoHistory.isNotEmpty()) 0.10f else 0.04f),
+            ) {
+                Icon(
+                    Icons.Rounded.Redo,
+                    "Redo",
+                    tint = Color.White.copy(alpha = if (redoHistory.isNotEmpty()) 0.92f else 0.28f),
+                    modifier = Modifier.size(19.dp),
+                )
+            }
+            Spacer(Modifier.width(4.dp))
             AnimatedContent(
                 targetState    = saving,
                 transitionSpec = {
@@ -244,7 +368,7 @@ fun PhotoEditorScreen(
                 label = "save-btn",
             ) { busy ->
                 if (busy) {
-                    Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(
                             color       = MaterialTheme.colorScheme.primary,
                             strokeWidth = 2.5.dp,
@@ -276,7 +400,7 @@ fun PhotoEditorScreen(
                                 if (ok) onSaved()
                             }
                         },
-                        size       = 46.dp,
+                        size       = 42.dp,
                         background = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
                     ) {
                         Icon(Icons.Rounded.Check, "Save copy", tint = Color.White)
@@ -316,8 +440,16 @@ fun PhotoEditorScreen(
                         horizontalArrangement = Arrangement.spacedBy(22.dp),
                         verticalAlignment     = Alignment.CenterVertically,
                     ) {
-                        EditorTool("Rotate", Icons.Rounded.RotateRight) { rotationSteps += 1f }
-                        EditorTool("Flip", Icons.Rounded.Flip) { flippedH = !flippedH }
+                        EditorTool("Rotate", Icons.Rounded.RotateRight) {
+                            val before = snapshot()
+                            rotationSteps += 1f
+                            rememberChange(before)
+                        }
+                        EditorTool("Flip", Icons.Rounded.Flip) {
+                            val before = snapshot()
+                            flippedH = !flippedH
+                            rememberChange(before)
+                        }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
                                 text     = "Pinch & drag to crop",
@@ -344,14 +476,89 @@ fun PhotoEditorScreen(
                             .padding(horizontal = 18.dp, vertical = 14.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        GlassSlider("Brightness", brightness, Color(0xFFFFD479)) { brightness = it }
-                        GlassSlider("Contrast", contrast, Color(0xFF8FD3FF)) { contrast = it }
-                        GlassSlider("Saturation", saturation, Color(0xFFFF8FC2)) { saturation = it }
+                        GlassSlider(
+                            label = "Brightness",
+                            value = brightness,
+                            tint = Color(0xFFFFD479),
+                            onInteractionStart = {
+                                if (adjustmentGestureStart == null) adjustmentGestureStart = snapshot()
+                            },
+                            onInteractionEnd = {
+                                adjustmentGestureStart?.let(::rememberChange)
+                                adjustmentGestureStart = null
+                            },
+                            onChange = { brightness = it },
+                        )
+                        GlassSlider(
+                            label = "Contrast",
+                            value = contrast,
+                            tint = Color(0xFF8FD3FF),
+                            onInteractionStart = {
+                                if (adjustmentGestureStart == null) adjustmentGestureStart = snapshot()
+                            },
+                            onInteractionEnd = {
+                                adjustmentGestureStart?.let(::rememberChange)
+                                adjustmentGestureStart = null
+                            },
+                            onChange = { contrast = it },
+                        )
+                        GlassSlider(
+                            label = "Saturation",
+                            value = saturation,
+                            tint = Color(0xFFFF8FC2),
+                            onInteractionStart = {
+                                if (adjustmentGestureStart == null) adjustmentGestureStart = snapshot()
+                            },
+                            onInteractionEnd = {
+                                adjustmentGestureStart?.let(::rememberChange)
+                                adjustmentGestureStart = null
+                            },
+                            onChange = { saturation = it },
+                        )
                     }
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
+            val originalInteraction = remember { MutableInteractionSource() }
+            Box(
+                modifier = Modifier
+                    .pressBounce(originalInteraction, pressedScale = 0.96f, spec = Motion.snappy(), haptic = false)
+                    .clip(PillShape)
+                    .liquidGlass(alpha = if (comparingOriginal) 0.64f else 0.38f)
+                    .glassSheen()
+                    .liquidGlassBorder(PillShape)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onPress = {
+                                comparingOriginal = true
+                                try {
+                                    tryAwaitRelease()
+                                } finally {
+                                    comparingOriginal = false
+                                }
+                            }
+                        )
+                    }
+                    .padding(horizontal = 18.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                AnimatedContent(
+                    targetState = comparingOriginal,
+                    transitionSpec = {
+                        fadeIn(Motion.snappy()) togetherWith fadeOut(Motion.snappy())
+                    },
+                    label = "editor-original-compare",
+                ) { showingOriginal ->
+                    Text(
+                        text = if (showingOriginal) "Original" else "Hold for original",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White.copy(alpha = if (showingOriginal) 1f else 0.72f),
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
             LiquidTabBar(
                 options       = listOf("Crop", "Adjust"),
                 selectedIndex = mode,
@@ -379,6 +586,8 @@ private fun GlassSlider(
     label: String,
     value: Float,
     tint: Color,
+    onInteractionStart: () -> Unit = {},
+    onInteractionEnd: () -> Unit = {},
     onChange: (Float) -> Unit,
 ) {
     Column {
@@ -404,19 +613,28 @@ private fun GlassSlider(
                 .liquidGlassBorder(PillShape)
                 .onSizeChanged { trackWidth = it.width }
                 .pointerInput(trackWidth) {
-                    detectDragGestures { change, _ ->
-                        change.consume()
-                        if (trackWidth > 0) {
-                            val t = (change.position.x / trackWidth).coerceIn(0f, 1f)
-                            onChange(t * 2f - 1f)
-                        }
-                    }
-                }
-                .pointerInput(trackWidth) {
-                    detectTapGestures { tap ->
-                        if (trackWidth > 0) {
-                            val t = (tap.x / trackWidth).coerceIn(0f, 1f)
-                            onChange(t * 2f - 1f)
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        onInteractionStart()
+                        try {
+                            if (trackWidth > 0) {
+                                val t = (down.position.x / trackWidth).coerceIn(0f, 1f)
+                                onChange(t * 2f - 1f)
+                            }
+                            var pressed = true
+                            while (pressed) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                    ?: event.changes.firstOrNull()
+                                if (change != null && change.pressed && trackWidth > 0) {
+                                    change.consume()
+                                    val t = (change.position.x / trackWidth).coerceIn(0f, 1f)
+                                    onChange(t * 2f - 1f)
+                                }
+                                pressed = event.changes.any { it.pressed }
+                            }
+                        } finally {
+                            onInteractionEnd()
                         }
                     }
                 },

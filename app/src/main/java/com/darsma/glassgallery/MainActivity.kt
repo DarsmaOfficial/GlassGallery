@@ -8,7 +8,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -29,6 +28,7 @@ import com.darsma.glassgallery.ui.photo.PhotoViewerScreen
 import com.darsma.glassgallery.ui.player.PlayerScreen
 import com.darsma.glassgallery.ui.trash.TrashScreen
 import com.darsma.glassgallery.ui.editor.PhotoEditorScreen
+import com.darsma.glassgallery.ui.components.Motion
 import com.darsma.glassgallery.ui.theme.GlassGalleryTheme
 
 class MainActivity : ComponentActivity() {
@@ -60,18 +60,18 @@ private fun GlassGalleryNavHost() {
             composable(
                 route = "gallery",
                 enterTransition     = {
-                    fadeIn(spring(stiffness = 300f))
+                    fadeIn(Motion.standard())
                 },
                 exitTransition      = {
-                    scaleOut(targetScale = 0.92f, animationSpec = spring(stiffness = 300f)) +
-                        fadeOut(spring(stiffness = 400f))
+                    scaleOut(targetScale = 0.92f, animationSpec = Motion.standard()) +
+                        fadeOut(Motion.snappy())
                 },
                 popEnterTransition  = {
-                    scaleIn(initialScale = 0.92f, animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f)) +
-                        fadeIn(spring(stiffness = 300f))
+                    scaleIn(initialScale = 0.92f, animationSpec = Motion.expressive()) +
+                        fadeIn(Motion.standard())
                 },
                 popExitTransition   = {
-                    fadeOut(spring(stiffness = 400f))
+                    fadeOut(Motion.snappy())
                 },
             ) {
                 GalleryScreen(
@@ -105,17 +105,17 @@ private fun GlassGalleryNavHost() {
                     // morphing open rather than a screen sliding in.
                     scaleIn(
                         initialScale  = 0.86f,
-                        animationSpec = spring(dampingRatio = 0.75f, stiffness = 280f),
+                        animationSpec = Motion.expressive(),
                     ) + slideInVertically(
                         initialOffsetY = { it / 10 },
-                        animationSpec  = spring(dampingRatio = 0.85f, stiffness = 300f),
-                    ) + fadeIn(spring(stiffness = 300f))
+                        animationSpec  = Motion.standard(),
+                    ) + fadeIn(Motion.standard())
                 },
                 popExitTransition   = {
                     slideOutVertically(
                         targetOffsetY = { it / 5 },
-                        animationSpec = spring(dampingRatio = 0.9f, stiffness = 280f),
-                    ) + fadeOut(spring(stiffness = 400f))
+                        animationSpec = Motion.standard(),
+                    ) + fadeOut(Motion.snappy())
                 },
             ) { backStackEntry ->
                 val videoId = backStackEntry.arguments?.getLong("videoId") ?: return@composable
@@ -134,8 +134,8 @@ private fun GlassGalleryNavHost() {
             composable(
                 route     = "photo/{photoId}",
                 arguments = listOf(navArgument("photoId") { type = NavType.LongType }),
-                enterTransition   = { fadeIn(spring(stiffness = 300f)) },
-                popExitTransition = { fadeOut(spring(stiffness = 400f)) },
+                enterTransition   = { fadeIn(Motion.standard()) },
+                popExitTransition = { fadeOut(Motion.snappy()) },
             ) { backStackEntry ->
                 val photoId = backStackEntry.arguments?.getLong("photoId") ?: return@composable
                 PhotoViewerScreen(
@@ -155,14 +155,14 @@ private fun GlassGalleryNavHost() {
                 enterTransition   = {
                     scaleIn(
                         initialScale  = 0.94f,
-                        animationSpec = spring(dampingRatio = 0.82f, stiffness = 320f),
-                    ) + fadeIn(spring(stiffness = 320f))
+                        animationSpec = Motion.expressive(),
+                    ) + fadeIn(Motion.standard())
                 },
                 popExitTransition = {
                     scaleOut(
                         targetScale   = 0.96f,
-                        animationSpec = spring(dampingRatio = 0.9f, stiffness = 300f),
-                    ) + fadeOut(spring(stiffness = 420f))
+                        animationSpec = Motion.standard(),
+                    ) + fadeOut(Motion.snappy())
                 },
             ) { backStackEntry ->
                 val editId = backStackEntry.arguments?.getLong("photoId") ?: return@composable
@@ -182,14 +182,14 @@ private fun GlassGalleryNavHost() {
                 enterTransition   = {
                     slideInVertically(
                         initialOffsetY = { it / 6 },
-                        animationSpec  = spring(dampingRatio = 0.82f, stiffness = 300f),
-                    ) + fadeIn(spring(stiffness = 300f))
+                        animationSpec  = Motion.expressive(),
+                    ) + fadeIn(Motion.standard())
                 },
                 popExitTransition = {
                     slideOutVertically(
                         targetOffsetY = { it / 5 },
-                        animationSpec = spring(dampingRatio = 0.9f, stiffness = 280f),
-                    ) + fadeOut(spring(stiffness = 400f))
+                        animationSpec = Motion.standard(),
+                    ) + fadeOut(Motion.snappy())
                 },
             ) {
                 TrashScreen(onBack = { navController.popBackStack() })

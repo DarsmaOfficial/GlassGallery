@@ -96,6 +96,7 @@ import com.darsma.glassgallery.ui.components.favoriteBurst
 import com.darsma.glassgallery.ui.components.glassSheen
 import com.darsma.glassgallery.ui.components.SmoothSeekBar
 import com.darsma.glassgallery.ui.components.liquidGlass
+import com.darsma.glassgallery.ui.components.opticalGlass
 import com.darsma.glassgallery.ui.components.pressBounce
 import com.darsma.glassgallery.ui.gallery.GalleryViewModel
 import kotlinx.coroutines.delay
@@ -333,6 +334,7 @@ fun PlayerScreen(
                         .padding(horizontal = 14.dp, vertical = 10.dp)
                         .clip(ControlsShape)
                         .liquidGlass(alpha = 0.42f)
+                        .opticalGlass(intensity = 0.76f)
                         .glassSheen()
                         .padding(horizontal = 6.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -430,6 +432,7 @@ fun PlayerScreen(
                         .padding(horizontal = 16.dp, vertical = 18.dp)
                         .clip(ControlsShape)
                         .liquidGlass(alpha = 0.50f)
+                        .opticalGlass(intensity = 0.84f)
                         .glassSheen()
                         .padding(horizontal = 18.dp, vertical = 14.dp),
                 ) {
@@ -565,7 +568,7 @@ private fun FavoriteButton(isFavorite: Boolean, onToggle: () -> Unit) {
             .clickable(
                 interactionSource = interaction,
                 indication        = null,
-                onClick           = onToggle,
+                onClick           = { runCatching { onToggle() } },
             ),
         contentAlignment = Alignment.Center,
     ) {

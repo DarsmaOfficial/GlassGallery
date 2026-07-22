@@ -16,6 +16,7 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -26,6 +27,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -61,6 +63,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -92,6 +95,7 @@ import com.darsma.glassgallery.ui.components.favoriteBurst
 import com.darsma.glassgallery.ui.components.glassSheen
 import com.darsma.glassgallery.ui.components.liquidGlass
 import com.darsma.glassgallery.ui.components.liquidGlassBorder
+import com.darsma.glassgallery.ui.components.opticalGlass
 import com.darsma.glassgallery.ui.gallery.GalleryUiState
 import kotlinx.coroutines.delay
 import com.darsma.glassgallery.ui.components.pressBounce
@@ -150,6 +154,25 @@ fun PhotoViewerScreen(
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     val scope = rememberCoroutineScope()
 
+    // One-finger pull-down dismissal at 1x zoom. The surface follows the
+    // finger directly, rounds its corners and reveals depth behind it; cancel
+    // rides the spatial spring back home.
+    var dismissTargetY by remember { mutableFloatStateOf(0f) }
+    var dismissDragging by remember { mutableStateOf(false) }
+    val renderedDismissY by animateFloatAsState(
+        targetValue = dismissTargetY,
+        animationSpec = when {
+            dismissDragging -> tween(durationMillis = 0)
+            containerSize.height > 0 && dismissTargetY > containerSize.height * 0.75f ->
+                tween(durationMillis = 190)
+            else -> Motion.spatial()
+        },
+        label = "photo-pull-dismiss-y",
+    )
+    val dismissProgress = if (containerSize.height > 0) {
+        (renderedDismissY / (containerSize.height * 0.48f)).coerceIn(0f, 1f)
+    } else 0f
+
     // Zoom/pan are Animatables so every settle — pinch release, double-tap,
     // reset — rides a spring instead of snapping.
     val zoom    = remember { Animatable(1f) }
@@ -186,18 +209,20 @@ fun PhotoViewerScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    val p = backProgress.value
+                    val back = backProgress.value
+                    val p = maxOf(back, dismissProgress)
                     val s = 1f - 0.14f * p
                     scaleX = s
                     scaleY = s
-                    alpha  = 1f - 0.28f * p
-                    translationY = 26.dp.toPx() * p
+                    alpha = 1f - 0.28f * back - 0.08f * dismissProgress
+                    translationY = 26.dp.toPx() * back + renderedDismissY
                     if (p > 0.001f) {
                         shape = RoundedCornerShape(48f * p)
-                        clip  = true
+                        clip = true
+                        shadowElevation = 28.dp.toPx() * dismissProgress
                     }
                 }
-                .background(Color.Black)
+                .background(Color.Black.copy(alpha = 1f - 0.44f * dismissProgress))
                 .onSizeChanged { containerSize = it }
                 .pointerInput(Unit) {
                     detectTapGestures(
@@ -226,6 +251,40 @@ fun PhotoViewerScreen(
                         },
                     )
                 }
+                .pointerInput(zoom.value, containerSize.height) {
+                    if (zoom.value <= 1.02f && containerSize.height > 0) {
+                        detectVerticalDragGestures(
+                            onDragStart = {
+                                dismissDragging = true
+                            },
+                            onVerticalDrag = { change, dragAmount ->
+                                val next = (dismissTargetY + dragAmount).coerceAtLeast(0f)
+                                if (next > 0f || dragAmount > 0f) {
+                                    change.consume()
+                                    dismissTargetY = next
+                                }
+                            },
+                            onDragCancel = {
+                                dismissDragging = false
+                                dismissTargetY = 0f
+                            },
+                            onDragEnd = {
+                                dismissDragging = false
+                                val dismiss = dismissTargetY > containerSize.height * 0.16f
+                                if (dismiss) {
+                                    chromeVisible = false
+                                    dismissTargetY = containerSize.height * 1.08f
+                                    scope.launch {
+                                        delay(190L)
+                                        onBack()
+                                    }
+                                } else {
+                                    dismissTargetY = 0f
+                                }
+                            },
+                        )
+                    }
+                }
                 .transformable(transformState),
         ) {
             // ── The photo — shared-element morph target ───────────────────
@@ -253,6 +312,37 @@ fun PhotoViewerScreen(
                 )
             }
 
+            AnimatedVisibility(
+                visible = renderedDismissY > 8f,
+                enter = fadeIn(Motion.snappy()) + scaleIn(Motion.morph(), initialScale = 0.72f),
+                exit = fadeOut(Motion.snappy()) + scaleOut(Motion.snappy(), targetScale = 0.76f),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .systemBarsPadding()
+                    .padding(top = 8.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .graphicsLayer {
+                            alpha = (0.35f + dismissProgress * 0.65f).coerceIn(0f, 1f)
+                            scaleX = 0.88f + dismissProgress * 0.12f
+                            scaleY = 0.88f + dismissProgress * 0.12f
+                        }
+                        .clip(RoundedCornerShape(50))
+                        .liquidGlass(alpha = 0.68f)
+                        .opticalGlass(intensity = 0.90f)
+                        .liquidGlassBorder(RoundedCornerShape(50))
+                        .padding(horizontal = 13.dp, vertical = 7.dp),
+                ) {
+                    Text(
+                        text = if (dismissProgress > 0.72f) "Release to close" else "Pull to close",
+                        color = Color.White.copy(alpha = 0.92f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+
             // ── Top chrome ─────────────────────────────────────────────────
             AnimatedVisibility(
                 visible  = chromeVisible,
@@ -268,6 +358,7 @@ fun PhotoViewerScreen(
                         .padding(horizontal = 14.dp, vertical = 10.dp)
                         .clip(ChromeShape)
                         .liquidGlass(alpha = 0.42f)
+                        .opticalGlass(intensity = 0.76f)
                         .glassSheen()
                         .padding(horizontal = 6.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -359,6 +450,7 @@ fun PhotoViewerScreen(
                         .padding(bottom = 18.dp)
                         .clip(ChromeShape)
                         .liquidGlass(alpha = 0.50f)
+                        .opticalGlass(intensity = 0.82f)
                         .glassSheen()
                         .liquidGlassBorder(ChromeShape)
                         .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -423,7 +515,7 @@ private fun PhotoFavoriteButton(isFavorite: Boolean, onToggle: () -> Unit) {
             .clickable(
                 interactionSource = interaction,
                 indication        = null,
-                onClick           = onToggle,
+                onClick           = { runCatching { onToggle() } },
             ),
         contentAlignment = Alignment.Center,
     ) {

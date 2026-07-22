@@ -59,6 +59,9 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
@@ -66,6 +69,9 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -112,8 +118,10 @@ import coil3.compose.AsyncImagePainter
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.darsma.glassgallery.R
+import com.darsma.glassgallery.data.SortOrder
 import com.darsma.glassgallery.data.Video
 import com.darsma.glassgallery.data.formatBytes
+import com.darsma.glassgallery.data.toTimeline
 import com.darsma.glassgallery.ui.components.AuroraBackground
 import com.darsma.glassgallery.ui.components.BouncyIconButton
 import com.darsma.glassgallery.ui.components.LiquidTabBar
@@ -139,6 +147,7 @@ fun GalleryScreen(
     sharedTransitionScope: SharedTransitionScope,
     onVideoClick: (Video) -> Unit,
     onMiniPlayerClick: () -> Unit,
+    onOpenTrash: () -> Unit,
 ) {
     val context           = LocalContext.current
     val uiState           by viewModel.uiState.collectAsState()
@@ -151,11 +160,15 @@ fun GalleryScreen(
     val searchQuery       by viewModel.searchQuery.collectAsState()
     val mediaFilter       by viewModel.mediaFilter.collectAsState()
     val selectedIds       by viewModel.selectedIds.collectAsState()
+    val albums            by viewModel.albums.collectAsState()
+    val openAlbum         by viewModel.openAlbum.collectAsState()
     val selectionMode     = selectedIds.isNotEmpty()
     val haptic            = LocalHapticFeedback.current
 
     // Selection mode is dismissible with the system back gesture.
     BackHandler(enabled = selectionMode) { viewModel.clearSelection() }
+    // Inside an album, back first pops out to the album shelf.
+    BackHandler(enabled = !selectionMode && openAlbum != null) { viewModel.openAlbum(null) }
 
     // System-confirmed bulk delete.
     var pendingDelete by remember { mutableStateOf<Set<Long>>(emptySet()) }
@@ -207,6 +220,38 @@ fun GalleryScreen(
     // Photos tab switches the grid to a tight 3-column square mosaic;
     // animateItem morphs every tile into its new position.
     val compactGrid = mediaFilter == MediaFilter.PHOTOS
+
+    // ── Sticky timeline chip ────────────────────────────────────────────────
+    // Mirrors the grid's item order (headers count as items) so the label at
+    // or before the first visible index is the section currently on screen.
+    val successVideos = (uiState as? GalleryUiState.Success)?.videos ?: emptyList()
+    val dateSortedNow = sortOrder == SortOrder.DATE_NEWEST || sortOrder == SortOrder.DATE_OLDEST
+    val inAlbumChip   = mediaFilter == MediaFilter.ALBUMS && openAlbum != null
+    val flatLabels    = remember(successVideos, dateSortedNow, inAlbumChip) {
+        if (!dateSortedNow) emptyList()
+        else buildList<String?> {
+            if (inAlbumChip) add(null)  // the album back-chip occupies index 0
+            successVideos.toTimeline().forEach { section ->
+                add(section.label)
+                repeat(section.items.size) { add(null) }
+            }
+        }
+    }
+    val stickyLabel by remember(flatLabels) {
+        derivedStateOf {
+            if (flatLabels.isEmpty()) null
+            else {
+                var i = gridState.firstVisibleItemIndex.coerceAtMost(flatLabels.lastIndex)
+                var found: String? = null
+                while (i >= 0) {
+                    val l = flatLabels[i]
+                    if (l != null) { found = l; break }
+                    i--
+                }
+                found
+            }
+        }
+    }
     val topInset    = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
     Box(
@@ -251,7 +296,17 @@ fun GalleryScreen(
                 }
 
                 is GalleryUiState.Success -> {
-                    if (state.videos.isEmpty()) {
+                    val albumShelf = mediaFilter == MediaFilter.ALBUMS && openAlbum == null
+                    if (albumShelf) {
+                        // Albums tab root: folder shelf + Recently Deleted card.
+                        AlbumShelf(
+                            albums      = albums,
+                            topInset    = topInset,
+                            bottomPad   = 86.dp + if (hasMiniPlayer) MINI_PLAYER_HEIGHT else 0.dp,
+                            onOpen      = { viewModel.openAlbum(it) },
+                            onOpenTrash = onOpenTrash,
+                        )
+                    } else if (state.videos.isEmpty()) {
                         CenterBox {
                             Text(
                                 text     = if (favoritesOnly)
@@ -278,34 +333,71 @@ fun GalleryScreen(
                             verticalArrangement    = Arrangement.spacedBy(gap),
                             horizontalArrangement  = Arrangement.spacedBy(gap),
                         ) {
-                            itemsIndexed(
-                                items = state.videos,
-                                key   = { _, video -> video.id },
-                            ) { index, video ->
-                                VideoCard(
-                                    video         = video,
-                                    index         = index,
-                                    isFavorite    = video.id in favorites,
-                                    compact       = compactGrid,
-                                    selected      = video.id in selectedIds,
-                                    selectionMode = selectionMode,
-                                    sharedTransitionScope   = sharedTransitionScope,
-                                    animatedVisibilityScope = animatedVisibilityScope,
-                                    onClick     = {
-                                        if (selectionMode) viewModel.toggleSelection(video.id)
-                                        else onVideoClick(video)
-                                    },
-                                    onLongPress = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        viewModel.toggleSelection(video.id)
-                                    },
-                                    onToggleFav = { viewModel.toggleFavorite(video.id) },
-                                    modifier    = Modifier.animateItem(
-                                        fadeInSpec    = Motion.standard(),
-                                        placementSpec = Motion.expressive(),
-                                        fadeOutSpec   = Motion.snappy(),
-                                    ),
-                                )
+                            // Shared card emitter so timeline sections and the
+                            // flat grid render identical tiles.
+                            fun LazyGridScope.mediaItems(list: List<Video>) {
+                                itemsIndexed(
+                                    items = list,
+                                    key   = { _, video -> video.id },
+                                ) { index, video ->
+                                    VideoCard(
+                                        video         = video,
+                                        index         = index,
+                                        isFavorite    = video.id in favorites,
+                                        compact       = compactGrid,
+                                        selected      = video.id in selectedIds,
+                                        selectionMode = selectionMode,
+                                        sharedTransitionScope   = sharedTransitionScope,
+                                        animatedVisibilityScope = animatedVisibilityScope,
+                                        onClick     = {
+                                            if (selectionMode) viewModel.toggleSelection(video.id)
+                                            else onVideoClick(video)
+                                        },
+                                        onLongPress = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            viewModel.toggleSelection(video.id)
+                                        },
+                                        onToggleFav = { viewModel.toggleFavorite(video.id) },
+                                        modifier    = Modifier.animateItem(
+                                            fadeInSpec    = Motion.standard(),
+                                            placementSpec = Motion.expressive(),
+                                            fadeOutSpec   = Motion.snappy(),
+                                        ),
+                                    )
+                                }
+                            }
+
+                            // Inside an album: a full-width back chip leads the grid.
+                            if (mediaFilter == MediaFilter.ALBUMS && openAlbum != null) {
+                                item(key = "album-chip", span = { GridItemSpan(maxLineSpan) }) {
+                                    AlbumBackChip(
+                                        name     = openAlbum ?: "",
+                                        count    = state.videos.size,
+                                        onBack   = { viewModel.openAlbum(null) },
+                                        modifier = Modifier.animateItem(placementSpec = Motion.expressive()),
+                                    )
+                                }
+                            }
+
+                            val dateSorted =
+                                sortOrder == SortOrder.DATE_NEWEST || sortOrder == SortOrder.DATE_OLDEST
+                            if (dateSorted) {
+                                // Timeline: full-span glass date headers per section.
+                                state.videos.toTimeline().forEach { section ->
+                                    item(
+                                        key  = "hdr-${section.label}",
+                                        span = { GridItemSpan(maxLineSpan) },
+                                    ) {
+                                        TimelineHeader(
+                                            label    = section.label,
+                                            count    = section.items.size,
+                                            modifier = Modifier.animateItem(placementSpec = Motion.expressive()),
+                                        )
+                                    }
+                                    mediaItems(section.items)
+                                }
+                            } else {
+                                mediaItems(state.videos)
                             }
                         }
                     }
@@ -341,6 +433,47 @@ fun GalleryScreen(
             )
         }
 
+        // Frosted date chip that "sticks" under the header while scrolling.
+        AnimatedVisibility(
+            visible  = headerScrolled && stickyLabel != null &&
+                       !(mediaFilter == MediaFilter.ALBUMS && openAlbum == null),
+            enter    = slideInVertically(initialOffsetY = { -it }, animationSpec = Motion.expressive()) +
+                       fadeIn(Motion.standard()),
+            exit     = slideOutVertically(targetOffsetY = { -it }, animationSpec = Motion.snappy()) +
+                       fadeOut(Motion.snappy()),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 100.dp),
+        ) {
+            AnimatedContent(
+                targetState    = stickyLabel ?: "",
+                transitionSpec = {
+                    (slideInVertically(initialOffsetY = { it / 2 }, animationSpec = Motion.expressive()) +
+                        fadeIn(Motion.standard())) togetherWith
+                        (slideOutVertically(targetOffsetY = { -it / 2 }, animationSpec = Motion.snappy()) +
+                            fadeOut(Motion.snappy()))
+                },
+                label = "sticky-date",
+            ) { label ->
+                Box(
+                    modifier = Modifier
+                        .clip(PillShape)
+                        .liquidGlass(alpha = 0.66f)
+                        .glassSheen()
+                        .liquidGlassBorder(PillShape)
+                        .padding(horizontal = 16.dp, vertical = 7.dp),
+                ) {
+                    Text(
+                        text       = label,
+                        fontSize   = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color      = Color.White,
+                    )
+                }
+            }
+        }
+
         MiniPlayer(
             video                   = currentVideo,
             isPlaying               = currentIsPlaying,
@@ -367,15 +500,19 @@ fun GalleryScreen(
                 .padding(bottom = 10.dp),
         ) {
             LiquidTabBar(
-                options       = listOf("All", "Videos", "Photos"),
-                icons         = listOf(Icons.Rounded.Apps, Icons.Rounded.PlayArrow, Icons.Rounded.Image),
+                options       = listOf("All", "Videos", "Photos", "Albums"),
+                icons         = listOf(
+                    Icons.Rounded.Apps, Icons.Rounded.PlayArrow,
+                    Icons.Rounded.Image, Icons.Rounded.PhotoLibrary,
+                ),
                 selectedIndex = when (mediaFilter) {
                     MediaFilter.ALL    -> 0
                     MediaFilter.VIDEOS -> 1
                     MediaFilter.PHOTOS -> 2
+                    MediaFilter.ALBUMS -> 3
                 },
                 onSelect      = { index -> viewModel.setMediaFilter(MediaFilter.entries[index]) },
-                modifier      = Modifier.fillMaxWidth(0.72f),
+                modifier      = Modifier.fillMaxWidth(0.86f),
             )
         }
 
@@ -454,8 +591,9 @@ fun GalleryScreen(
                         if (items.isNotEmpty()) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             pendingDelete = items.map { it.id }.toSet()
-                            val pi = MediaStore.createDeleteRequest(
-                                context.contentResolver, items.map { it.uri }
+                            // Soft delete: 30-day OS recycle bin instead of permanent erase.
+                            val pi = MediaStore.createTrashRequest(
+                                context.contentResolver, items.map { it.uri }, true
                             )
                             deleteLauncher.launch(
                                 IntentSenderRequest.Builder(pi.intentSender).build()
@@ -1118,4 +1256,244 @@ private fun formatDuration(ms: Long): String {
     val m = (totalSec % 3600) / 60
     val s = totalSec % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
+// ── Timeline ────────────────────────────────────────────────────────────────
+
+@Composable
+private fun TimelineHeader(
+    label: String,
+    count: Int,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier          = Modifier.then(modifier).padding(start = 4.dp, top = 10.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(PillShape)
+                .background(Color.White.copy(alpha = 0.07f))
+                .glassSheen()
+                .liquidGlassBorder(PillShape)
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+        ) {
+            Text(
+                text       = label,
+                fontSize   = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color      = Color.White,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text     = "$count",
+            fontSize = 12.sp,
+            color    = Color.White.copy(alpha = 0.40f),
+        )
+    }
+}
+
+// ── Albums ──────────────────────────────────────────────────────────────────
+
+@Composable
+private fun AlbumShelf(
+    albums: List<com.darsma.glassgallery.ui.gallery.Album>,
+    topInset: androidx.compose.ui.unit.Dp,
+    bottomPad: androidx.compose.ui.unit.Dp,
+    onOpen: (String) -> Unit,
+    onOpenTrash: () -> Unit,
+) {
+    LazyVerticalGrid(
+        columns               = GridCells.Fixed(2),
+        modifier              = Modifier.fillMaxSize(),
+        contentPadding        = PaddingValues(
+            start = 14.dp, end = 14.dp,
+            top = topInset + 112.dp, bottom = bottomPad,
+        ),
+        verticalArrangement   = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        itemsIndexed(albums, key = { _, a -> "album-${a.name}" }) { index, album ->
+            AlbumCard(
+                album    = album,
+                index    = index,
+                onClick  = { onOpen(album.name) },
+                modifier = Modifier.animateItem(
+                    fadeInSpec    = Motion.standard(),
+                    placementSpec = Motion.expressive(),
+                    fadeOutSpec   = Motion.snappy(),
+                ),
+            )
+        }
+        item(key = "album-trash") {
+            TrashCard(onClick = onOpenTrash, modifier = Modifier.animateItem())
+        }
+    }
+}
+
+@Composable
+private fun AlbumCard(
+    album: Album,
+    index: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    // Corner morph on press — same liquid language as the media cards.
+    val corner by animateDpAsState(
+        targetValue   = if (pressed) 34.dp else 22.dp,
+        animationSpec = Motion.expressive(),
+        label         = "album-corner",
+    )
+    val shape = RoundedCornerShape(corner)
+
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(index.coerceAtMost(10) * 34L)
+        appeared = true
+    }
+    val appear by animateFloatAsState(
+        targetValue   = if (appeared) 1f else 0f,
+        animationSpec = Motion.expressive(),
+        label         = "album-appear",
+    )
+
+    Column(
+        modifier = modifier
+            .graphicsLayer {
+                alpha        = appear.coerceIn(0f, 1f)
+                translationY = (1f - appear) * 52f
+                val sc = 0.92f + 0.08f * appear
+                scaleX = sc; scaleY = sc
+            }
+            .pressBounce(interaction, pressedScale = 0.95f)
+            .clip(shape)
+            .background(Color.White.copy(alpha = 0.05f))
+            .glassSheen()
+            .liquidGlassBorder(shape)
+            .clickable(
+                interactionSource = interaction,
+                indication        = null,
+                onClick           = onClick,
+            ),
+    ) {
+        AsyncImage(
+            model              = ImageRequest.Builder(LocalContext.current)
+                .data(album.cover.thumbnailUri)
+                .crossfade(280)
+                .build(),
+            contentDescription = album.name,
+            contentScale       = ContentScale.Crop,
+            modifier           = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1.15f)
+                .clip(RoundedCornerShape(topStart = corner, topEnd = corner)),
+        )
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(
+                text       = album.name,
+                fontSize   = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color      = Color.White,
+                maxLines   = 1,
+                overflow   = TextOverflow.Ellipsis,
+            )
+            Text(
+                text     = "${album.count} items",
+                fontSize = 11.sp,
+                color    = Color.White.copy(alpha = 0.50f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TrashCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val interaction = remember { MutableInteractionSource() }
+    Column(
+        modifier = modifier
+            .pressBounce(interaction, pressedScale = 0.95f)
+            .clip(CardShape)
+            .background(Color(0xFFFF7A7A).copy(alpha = 0.07f))
+            .glassSheen()
+            .liquidGlassBorder(CardShape)
+            .clickable(
+                interactionSource = interaction,
+                indication        = null,
+                onClick           = onClick,
+            ),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1.15f),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector        = Icons.Rounded.DeleteOutline,
+                contentDescription = null,
+                tint               = Color(0xFFFF9B9B),
+                modifier           = Modifier.size(44.dp),
+            )
+        }
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(
+                text       = "Recently Deleted",
+                fontSize   = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color      = Color.White,
+                maxLines   = 1,
+            )
+            Text(
+                text     = "30-day recycle bin",
+                fontSize = 11.sp,
+                color    = Color.White.copy(alpha = 0.50f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AlbumBackChip(
+    name: String,
+    count: Int,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        modifier = Modifier.then(modifier).padding(top = 2.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            modifier = Modifier
+                .pressBounce(interaction, pressedScale = 0.93f)
+                .clip(PillShape)
+                .liquidGlass(alpha = 0.55f)
+                .glassSheen()
+                .liquidGlassBorder(PillShape)
+                .clickable(
+                    interactionSource = interaction,
+                    indication        = null,
+                    onClick           = onBack,
+                )
+                .padding(start = 8.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.ChevronLeft, "All albums", tint = Color.White, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text       = name,
+                fontSize   = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color      = Color.White,
+                maxLines   = 1,
+                overflow   = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Text("$count items", fontSize = 12.sp, color = Color.White.copy(alpha = 0.45f))
+    }
 }

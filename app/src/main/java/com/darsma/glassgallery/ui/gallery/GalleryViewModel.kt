@@ -14,7 +14,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /** Which media kinds the grid is currently showing. */
-enum class MediaFilter { ALL, VIDEOS, PHOTOS }
+enum class MediaFilter { ALL, VIDEOS, PHOTOS, ALBUMS }
+
+/** One folder card on the Albums tab. */
+data class Album(val name: String, val cover: Video, val count: Int)
 
 sealed interface GalleryUiState {
     data object Loading            : GalleryUiState
@@ -48,9 +51,17 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    /** All / Videos / Photos segmented filter. */
+    /** All / Videos / Photos / Albums segmented filter. */
     private val _mediaFilter = MutableStateFlow(MediaFilter.ALL)
     val mediaFilter: StateFlow<MediaFilter> = _mediaFilter.asStateFlow()
+
+    /** Folder cards for the Albums tab, biggest first. */
+    private val _albums = MutableStateFlow<List<Album>>(emptyList())
+    val albums: StateFlow<List<Album>> = _albums.asStateFlow()
+
+    /** Non-null while browsing inside one album. */
+    private val _openAlbum = MutableStateFlow<String?>(null)
+    val openAlbum: StateFlow<String?> = _openAlbum.asStateFlow()
 
     /** Multi-select mode: ids currently selected in the grid. */
     private val _selectedIds = MutableStateFlow<Set<Long>>(emptySet())
@@ -120,6 +131,12 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     fun setMediaFilter(filter: MediaFilter) {
         if (filter == _mediaFilter.value) return
         _mediaFilter.value = filter
+        if (filter != MediaFilter.ALBUMS) _openAlbum.value = null
+        applyFilters()
+    }
+
+    fun openAlbum(name: String?) {
+        _openAlbum.value = name
         applyFilters()
     }
 
@@ -172,6 +189,14 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     /** Applies search + favorites filter + current sort, then publishes Success. */
     private fun applyFilters() {
+        // Rebuild album cards from the raw list every pass — cheap, always fresh.
+        _albums.value = rawVideos
+            .groupBy { it.bucketName.ifBlank { "Other" } }
+            .map { (name, items) ->
+                Album(name, items.maxByOrNull { it.dateAdded } ?: items.first(), items.size)
+            }
+            .sortedByDescending { it.count }
+
         val query = _searchQuery.value.trim()
         val filtered = rawVideos
             .asSequence()
@@ -180,6 +205,8 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                     MediaFilter.ALL    -> true
                     MediaFilter.VIDEOS -> it.isVideo
                     MediaFilter.PHOTOS -> !it.isVideo
+                    MediaFilter.ALBUMS ->
+                        _openAlbum.value == null || it.bucketName.ifBlank { "Other" } == _openAlbum.value
                 }
             }
             .filter { !_showFavoritesOnly.value || it.id in _favorites.value }

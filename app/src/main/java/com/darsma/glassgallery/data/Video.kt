@@ -11,6 +11,7 @@ data class Video(
     val sizeBytes: Long = 0L,  // file size in bytes
     val dateAdded: Long = 0L,  // unix seconds
     val isVideo: Boolean = true,  // false → this item is a photo
+    val bucketName: String = "",  // MediaStore album/folder name
 ) {
     /** Human-readable file size, e.g. "24.6 MB". */
     val readableSize: String

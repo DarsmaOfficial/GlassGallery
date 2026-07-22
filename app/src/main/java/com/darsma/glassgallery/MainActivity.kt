@@ -27,6 +27,7 @@ import com.darsma.glassgallery.ui.gallery.GalleryScreen
 import com.darsma.glassgallery.ui.gallery.GalleryViewModel
 import com.darsma.glassgallery.ui.photo.PhotoViewerScreen
 import com.darsma.glassgallery.ui.player.PlayerScreen
+import com.darsma.glassgallery.ui.trash.TrashScreen
 import com.darsma.glassgallery.ui.theme.GlassGalleryTheme
 
 class MainActivity : ComponentActivity() {
@@ -89,6 +90,7 @@ private fun GlassGalleryNavHost() {
                             navController.navigate("player/$id")
                         }
                     },
+                    onOpenTrash = { navController.navigate("trash") },
                 )
             }
 
@@ -142,6 +144,25 @@ private fun GlassGalleryNavHost() {
                     sharedTransitionScope   = this@SharedTransitionLayout,
                     onBack                  = { navController.popBackStack() },
                 )
+            }
+
+            // Recently Deleted — rises from the bottom like a sheet.
+            composable(
+                route = "trash",
+                enterTransition   = {
+                    slideInVertically(
+                        initialOffsetY = { it / 6 },
+                        animationSpec  = spring(dampingRatio = 0.82f, stiffness = 300f),
+                    ) + fadeIn(spring(stiffness = 300f))
+                },
+                popExitTransition = {
+                    slideOutVertically(
+                        targetOffsetY = { it / 5 },
+                        animationSpec = spring(dampingRatio = 0.9f, stiffness = 280f),
+                    ) + fadeOut(spring(stiffness = 400f))
+                },
+            ) {
+                TrashScreen(onBack = { navController.popBackStack() })
             }
         }
     }

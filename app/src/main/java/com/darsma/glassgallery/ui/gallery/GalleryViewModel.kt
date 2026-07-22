@@ -173,6 +173,9 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     // ── Internals ──────────────────────────────────────────────────────────
 
+    /** Public re-scan hook (e.g. after the editor saves a new copy). */
+    fun reload() = loadVideos()
+
     private fun loadVideos() {
         viewModelScope.launch {
             _uiState.value = GalleryUiState.Loading

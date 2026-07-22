@@ -28,6 +28,7 @@ import com.darsma.glassgallery.ui.gallery.GalleryViewModel
 import com.darsma.glassgallery.ui.photo.PhotoViewerScreen
 import com.darsma.glassgallery.ui.player.PlayerScreen
 import com.darsma.glassgallery.ui.trash.TrashScreen
+import com.darsma.glassgallery.ui.editor.PhotoEditorScreen
 import com.darsma.glassgallery.ui.theme.GlassGalleryTheme
 
 class MainActivity : ComponentActivity() {
@@ -143,6 +144,35 @@ private fun GlassGalleryNavHost() {
                     animatedVisibilityScope = this,
                     sharedTransitionScope   = this@SharedTransitionLayout,
                     onBack                  = { navController.popBackStack() },
+                    onEdit                  = { id -> navController.navigate("edit/$id") },
+                )
+            }
+
+            // Photo editor — scales up out of the viewer.
+            composable(
+                route     = "edit/{photoId}",
+                arguments = listOf(navArgument("photoId") { type = NavType.LongType }),
+                enterTransition   = {
+                    scaleIn(
+                        initialScale  = 0.94f,
+                        animationSpec = spring(dampingRatio = 0.82f, stiffness = 320f),
+                    ) + fadeIn(spring(stiffness = 320f))
+                },
+                popExitTransition = {
+                    scaleOut(
+                        targetScale   = 0.96f,
+                        animationSpec = spring(dampingRatio = 0.9f, stiffness = 300f),
+                    ) + fadeOut(spring(stiffness = 420f))
+                },
+            ) { backStackEntry ->
+                val editId = backStackEntry.arguments?.getLong("photoId") ?: return@composable
+                PhotoEditorScreen(
+                    photoId = editId,
+                    onBack  = { navController.popBackStack() },
+                    onSaved = {
+                        galleryViewModel.reload()
+                        navController.popBackStack()
+                    },
                 )
             }
 

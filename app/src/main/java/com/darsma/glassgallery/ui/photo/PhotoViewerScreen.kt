@@ -38,6 +38,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -48,11 +50,18 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Wallpaper
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -82,6 +91,9 @@ import com.darsma.glassgallery.ui.components.Motion
 import com.darsma.glassgallery.ui.components.favoriteBurst
 import com.darsma.glassgallery.ui.components.glassSheen
 import com.darsma.glassgallery.ui.components.liquidGlass
+import com.darsma.glassgallery.ui.components.liquidGlassBorder
+import com.darsma.glassgallery.ui.gallery.GalleryUiState
+import kotlinx.coroutines.delay
 import com.darsma.glassgallery.ui.components.pressBounce
 import com.darsma.glassgallery.ui.gallery.GalleryViewModel
 import kotlinx.coroutines.launch
@@ -102,6 +114,7 @@ fun PhotoViewerScreen(
     animatedVisibilityScope: AnimatedVisibilityScope,
     sharedTransitionScope: SharedTransitionScope,
     onBack: () -> Unit,
+    onEdit: (Long) -> Unit,
 ) {
     val context = LocalContext.current
 
@@ -118,6 +131,13 @@ fun PhotoViewerScreen(
 
     var chromeVisible  by remember { mutableStateOf(true) }
     var detailsVisible by remember { mutableStateOf(false) }
+    var slideshowOn    by remember { mutableStateOf(false) }
+
+    // Photos in the current gallery filter — the slideshow's playlist.
+    val galleryState by galleryViewModel.uiState.collectAsState()
+    val slidePhotos = remember(galleryState) {
+        (galleryState as? GalleryUiState.Success)?.videos?.filter { !it.isVideo } ?: emptyList()
+    }
 
     val deleteLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
@@ -310,8 +330,9 @@ fun PhotoViewerScreen(
                     Spacer(Modifier.width(2.dp))
                     BouncyIconButton(
                         onClick = {
-                            val pi = MediaStore.createDeleteRequest(
-                                context.contentResolver, listOf(photoUri)
+                            // Soft delete into the 30-day OS recycle bin.
+                            val pi = MediaStore.createTrashRequest(
+                                context.contentResolver, listOf(photoUri), true
                             )
                             deleteLauncher.launch(
                                 IntentSenderRequest.Builder(pi.intentSender).build()
@@ -322,6 +343,59 @@ fun PhotoViewerScreen(
                         Icon(Icons.Rounded.Delete, "Delete", tint = Color(0xFFFF7A7A))
                     }
                 }
+            }
+
+            // ── Bottom chrome: Edit · Slideshow · Wallpaper ────────────────
+            AnimatedVisibility(
+                visible  = chromeVisible && !slideshowOn,
+                enter    = slideInVertically(initialOffsetY = { it }, animationSpec = Motion.expressive()) +
+                           fadeIn(Motion.standard()),
+                exit     = slideOutVertically(targetOffsetY = { it }, animationSpec = Motion.standard()) + fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .navigationBarsPadding()
+                        .padding(bottom = 18.dp)
+                        .clip(ChromeShape)
+                        .liquidGlass(alpha = 0.50f)
+                        .glassSheen()
+                        .liquidGlassBorder(ChromeShape)
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    BottomAction("Edit", Icons.Rounded.Edit) { onEdit(photoId) }
+                    Spacer(Modifier.width(14.dp))
+                    BottomAction("Slideshow", Icons.Rounded.PlayArrow, enabled = slidePhotos.isNotEmpty()) {
+                        slideshowOn = true
+                        chromeVisible = false
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    BottomAction("Wallpaper", Icons.Rounded.Wallpaper) {
+                        // System "Set as" flow — free OS intent, user picks the target.
+                        val intent = Intent(Intent.ACTION_ATTACH_DATA).apply {
+                            addCategory(Intent.CATEGORY_DEFAULT)
+                            setDataAndType(photoUri, "image/*")
+                            putExtra("mimeType", "image/*")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        runCatching {
+                            context.startActivity(Intent.createChooser(intent, "Set as wallpaper"))
+                        }
+                    }
+                }
+            }
+
+            // ── Ken-Burns slideshow overlay ─────────────────────────────────
+            if (slideshowOn && slidePhotos.isNotEmpty()) {
+                SlideshowOverlay(
+                    photos       = slidePhotos,
+                    startId      = photoId,
+                    onExit       = {
+                        slideshowOn   = false
+                        chromeVisible = true
+                    },
+                )
             }
 
             MediaDetailsSheet(
@@ -367,6 +441,111 @@ private fun PhotoFavoriteButton(isFavorite: Boolean, onToggle: () -> Unit) {
                 tint               = if (fav) Color(0xFFFF5C8A) else Color.White,
                 modifier           = Modifier.size(22.dp),
             )
+        }
+    }
+}
+
+@Composable
+private fun BottomAction(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier            = Modifier.graphicsLayer { alpha = if (enabled) 1f else 0.35f },
+    ) {
+        BouncyIconButton(onClick = { if (enabled) onClick() }, size = 46.dp) {
+            Icon(icon, label, tint = Color.White, modifier = Modifier.size(21.dp))
+        }
+        Text(label, fontSize = 10.sp, color = Color.White.copy(alpha = 0.70f))
+    }
+}
+
+/**
+ * Ken-Burns slideshow: every 4 s the next photo crossfades in while slowly
+ * zooming (alternating in/out, alternating drift direction) — the classic
+ * "living photos" effect built from two stacked AsyncImages and one clock.
+ */
+@Composable
+private fun SlideshowOverlay(
+    photos: List<Video>,
+    startId: Long,
+    onExit: () -> Unit,
+) {
+    var index by remember {
+        mutableIntStateOf(photos.indexOfFirst { it.id == startId }.coerceAtLeast(0))
+    }
+    // Advance the reel.
+    LaunchedEffect(photos) {
+        while (true) {
+            delay(4000L)
+            index = (index + 1) % photos.size
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication        = null,
+                onClick           = onExit,
+            ),
+    ) {
+        AnimatedContent(
+            targetState    = index,
+            transitionSpec = {
+                fadeIn(tween(durationMillis = 1200)) togetherWith
+                    fadeOut(tween(durationMillis = 1200))
+            },
+            label = "slideshow-frame",
+        ) { i ->
+            val photo = photos[i]
+            // One slow zoom per slide; direction alternates so motion never repeats.
+            val zoomIn = i % 2 == 0
+            val driftX = if (i % 4 < 2) 1f else -1f
+            val progress = remember(i) { Animatable(0f) }
+            LaunchedEffect(i) {
+                progress.animateTo(1f, animationSpec = tween(durationMillis = 5200))
+            }
+            AsyncImage(
+                model              = photo.uri,
+                contentDescription = photo.title,
+                contentScale       = ContentScale.Crop,
+                modifier           = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        val p = progress.value
+                        val sc = if (zoomIn) 1.06f + 0.14f * p else 1.20f - 0.14f * p
+                        scaleX = sc; scaleY = sc
+                        translationX = driftX * 28f * p
+                        translationY = -16f * p
+                    },
+            )
+        }
+        // Exit chip.
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .systemBarsPadding()
+                .padding(16.dp)
+                .clip(RoundedCornerShape(50))
+                .liquidGlass(alpha = 0.45f)
+                .glassSheen()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication        = null,
+                    onClick           = onExit,
+                )
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.Close, "Stop slideshow", tint = Color.White, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("${photos.size} photos", fontSize = 12.sp, color = Color.White)
         }
     }
 }

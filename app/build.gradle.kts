@@ -62,5 +62,6 @@ dependencies {
     implementation(libs.glance.appwidget)
     implementation(libs.mlkit.text.recognition)
     implementation(libs.mlkit.image.labeling)
+    implementation(libs.mlkit.selfie.segmentation)
     debugImplementation(libs.compose.ui.tooling)
 }

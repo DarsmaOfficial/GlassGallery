@@ -13,6 +13,7 @@ coil                      = "3.0.4"
 glance                    = "1.1.1"
 mlkitTextRecognition      = "16.0.1"
 mlkitImageLabeling        = "17.0.9"
+mlkitSelfieSegmentation   = "16.0.0-beta6"
 
 [libraries]
 compose-bom                 = { group = "androidx.compose",            name = "compose-bom",                 version.ref = "composeBom" }
@@ -35,6 +36,7 @@ coil-video                  = { group = "io.coil-kt.coil3",            name = "c
 glance-appwidget            = { group = "androidx.glance",              name = "glance-appwidget",            version.ref = "glance" }
 mlkit-text-recognition      = { group = "com.google.mlkit",             name = "text-recognition",            version.ref = "mlkitTextRecognition" }
 mlkit-image-labeling        = { group = "com.google.mlkit",             name = "image-labeling",              version.ref = "mlkitImageLabeling" }
+mlkit-selfie-segmentation   = { group = "com.google.mlkit",             name = "segmentation-selfie",         version.ref = "mlkitSelfieSegmentation" }
 compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 
 [plugins]

@@ -48,6 +48,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Flip
@@ -59,6 +60,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -101,6 +103,7 @@ private val PillShape   = RoundedCornerShape(50)
 private const val EditorHistoryLimit = 30
 
 private data class EditorSnapshot(
+    val bitmap: Bitmap?,
     val rotationSteps: Float,
     val flippedH: Boolean,
     val brightness: Float,
@@ -117,7 +120,7 @@ private data class EditorSnapshot(
  *            the visible viewport becomes the crop.
  *  · Adjust — brightness / contrast / saturation ColorMatrix sliders.
  * Saving renders everything onto a Bitmap and inserts a COPY via MediaStore —
- * the original is never touched. 100% framework APIs.
+ * the original is never touched. Portrait blur uses bundled, on-device ML Kit.
  */
 @Composable
 fun PhotoEditorScreen(
@@ -135,8 +138,12 @@ fun PhotoEditorScreen(
     }
 
     // Downsampled working bitmap — big enough to look sharp, small enough to fly.
-    val bitmap by produceState<Bitmap?>(null, photoId) {
+    val loadedBitmap by produceState<Bitmap?>(null, photoId) {
         value = withContext(Dispatchers.IO) { loadScaledBitmap(context, photoUri, 2048) }
+    }
+    var bitmap by remember(photoId) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(loadedBitmap) {
+        if (bitmap == null) bitmap = loadedBitmap
     }
 
     // ── Edit state ──────────────────────────────────────────────────────────
@@ -147,6 +154,7 @@ fun PhotoEditorScreen(
     var contrast   by remember { mutableFloatStateOf(0f) }  // -1..1
     var saturation by remember { mutableFloatStateOf(0f) }  // -1..1
     var saving by remember { mutableStateOf(false) }
+    var applyingPortraitBlur by remember { mutableStateOf(false) }
     var comparingOriginal by remember { mutableStateOf(false) }
     var applyingHistory by remember { mutableStateOf(false) }
     var undoHistory by remember(photoId) { mutableStateOf<List<EditorSnapshot>>(emptyList()) }
@@ -160,6 +168,7 @@ fun PhotoEditorScreen(
     var frameSize by remember { mutableStateOf(IntSize.Zero) }
 
     fun snapshot() = EditorSnapshot(
+        bitmap = bitmap,
         rotationSteps = rotationSteps,
         flippedH = flippedH,
         brightness = brightness,
@@ -181,6 +190,9 @@ fun PhotoEditorScreen(
     fun applySnapshot(target: EditorSnapshot) {
         if (applyingHistory) return
         applyingHistory = true
+        // A transform can be tapped while the source is still loading; never
+        // let such an early history entry clear a bitmap that has since arrived.
+        bitmap = target.bitmap ?: bitmap
         rotationSteps = target.rotationSteps
         flippedH = target.flippedH
         brightness = target.brightness
@@ -248,7 +260,7 @@ fun PhotoEditorScreen(
             .background(Color.Black),
     ) {
         // ── Photo preview: live ColorMatrix via ColorFilter ────────────────
-        val preview = bitmap
+        val preview = if (comparingOriginal) loadedBitmap else bitmap
         if (preview == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -355,6 +367,57 @@ fun PhotoEditorScreen(
                     Icons.Rounded.Redo,
                     "Redo",
                     tint = Color.White.copy(alpha = if (redoHistory.isNotEmpty()) 0.92f else 0.28f),
+                    modifier = Modifier.size(19.dp),
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+            BouncyIconButton(
+                onClick = {
+                    val src = bitmap
+                    if (src != null && !saving && !applyingPortraitBlur && !applyingHistory) {
+                        val before = snapshot()
+                        applyingPortraitBlur = true
+                        scope.launch {
+                            val result = withContext(Dispatchers.Default) {
+                                runCatching { applyPortraitBackgroundBlur(src) }
+                            }
+                            applyingPortraitBlur = false
+                            result.fold(
+                                onSuccess = { blurResult ->
+                                    when (blurResult) {
+                                        is PortraitBlurResult.Success -> {
+                                            bitmap = blurResult.bitmap
+                                            rememberChange(before)
+                                        }
+                                        PortraitBlurResult.NoPerson -> Toast.makeText(
+                                            context,
+                                            "No person found",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                },
+                                onFailure = {
+                                    Toast.makeText(
+                                        context,
+                                        "Couldn't blur background",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                },
+                            )
+                        }
+                    }
+                },
+                size = 38.dp,
+                background = MaterialTheme.colorScheme.primary.copy(
+                    alpha = if (bitmap != null && !saving && !applyingPortraitBlur) 0.20f else 0.06f
+                ),
+            ) {
+                Icon(
+                    Icons.Rounded.BlurOn,
+                    "Blur background",
+                    tint = Color.White.copy(
+                        alpha = if (bitmap != null && !saving && !applyingPortraitBlur) 0.92f else 0.28f
+                    ),
                     modifier = Modifier.size(19.dp),
                 )
             }
@@ -566,6 +629,47 @@ fun PhotoEditorScreen(
                 modifier      = Modifier.fillMaxWidth(0.6f),
             )
         }
+
+        AnimatedVisibility(
+            visible = applyingPortraitBlur,
+            enter = fadeIn(Motion.snappy()),
+            exit = fadeOut(Motion.snappy()),
+        ) {
+            val loadingInteraction = remember { MutableInteractionSource() }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.22f))
+                    .clickable(
+                        interactionSource = loadingInteraction,
+                        indication = null,
+                        onClick = {},
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .clip(PillShape)
+                        .liquidGlass(alpha = 0.62f)
+                        .liquidGlassBorder(PillShape)
+                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text(
+                        text = "Blurring background…",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White.copy(alpha = 0.88f),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -670,7 +774,7 @@ private fun GlassSlider(
     }
 }
 
-// ── Bitmap plumbing (framework only) ────────────────────────────────────────
+// ── Bitmap plumbing ─────────────────────────────────────────────────────────
 
 private fun loadScaledBitmap(context: Context, uri: Uri, maxDim: Int): Bitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -678,7 +782,10 @@ private fun loadScaledBitmap(context: Context, uri: Uri, maxDim: Int): Bitmap? {
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
     var sample = 1
     while (bounds.outWidth / (sample * 2) >= maxDim || bounds.outHeight / (sample * 2) >= maxDim) sample *= 2
-    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+    val opts = BitmapFactory.Options().apply {
+        inSampleSize = sample
+        inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
     return context.contentResolver.openInputStream(uri)?.use {
         BitmapFactory.decodeStream(it, null, opts)
     }

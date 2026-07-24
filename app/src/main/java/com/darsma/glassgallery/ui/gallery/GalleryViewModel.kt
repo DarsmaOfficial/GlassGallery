@@ -4,9 +4,12 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.darsma.glassgallery.data.FavoritesStore
+import com.darsma.glassgallery.data.ImageSearchIndexer
+import com.darsma.glassgallery.data.ImageSearchMetadata
 import com.darsma.glassgallery.data.MediaStoreVideoSource
 import com.darsma.glassgallery.data.SortOrder
 import com.darsma.glassgallery.data.Video
+import com.darsma.glassgallery.data.imageSearchCacheKey
 import com.darsma.glassgallery.data.sortedBy
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +37,9 @@ private data class SearchEntry(
     val media: Video,
     val title: String,
     val album: String,
+    val visionText: String,
+    val labels: String,
+    val labelValues: List<String>,
     val titleWords: List<String>,
 )
 
@@ -54,13 +60,16 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     private val videoSource    = MediaStoreVideoSource(application)
     private val favoritesStore = FavoritesStore(application)
+    private val imageSearchIndexer = ImageSearchIndexer(application)
 
     /** Unsorted master list straight from MediaStore. */
     private var rawVideos: List<Video> = emptyList()
 
-    /** Immutable normalized index, rebuilt only when MediaStore changes. */
+    /** Immutable normalized index, refreshed as on-device photo metadata arrives. */
     private var searchIndex: List<SearchEntry> = emptyList()
+    private val indexedImages = mutableMapOf<String, ImageSearchMetadata>()
     private var searchJob: Job? = null
+    private var imageIndexJob: Job? = null
 
     private val _uiState = MutableStateFlow<GalleryUiState>(GalleryUiState.PermissionRequired)
     val uiState: StateFlow<GalleryUiState> = _uiState.asStateFlow()
@@ -85,7 +94,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private val _showFavoritesOnly = MutableStateFlow(false)
     val showFavoritesOnly: StateFlow<Boolean> = _showFavoritesOnly.asStateFlow()
 
-    /** Free-text search query applied to media titles and album/folder names. */
+    /** Free-text search over titles, albums, OCR text and on-device image labels. */
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
@@ -254,7 +263,12 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     /** Prune deleted items from the in-memory list — no full reload needed. */
     fun removeFromList(ids: Set<Long>) {
         rawVideos = rawVideos.filterNot { it.id in ids }
-        searchIndex = buildSearchIndex(rawVideos)
+        val remainingKeys = rawVideos.asSequence()
+            .filterNot { it.isVideo }
+            .map(Video::imageSearchCacheKey)
+            .toSet()
+        indexedImages.keys.retainAll(remainingKeys)
+        searchIndex = searchIndex.filterNot { it.media.id in ids }
         if (_currentVideo.value?.id in ids) _currentVideo.value = null
         _selectedIds.value = emptySet()
         applyFilters()
@@ -287,15 +301,22 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     fun reload() = loadVideos()
 
     private fun loadVideos() {
+        imageIndexJob?.cancel()
         viewModelScope.launch {
             _uiState.value = GalleryUiState.Loading
             try {
                 val media = videoSource.loadAllMedia()
-                val index = withContext(Dispatchers.Default) { buildSearchIndex(media) }
+                val cachedImages = imageSearchIndexer.loadCached(media)
+                val index = withContext(Dispatchers.Default) {
+                    buildSearchIndex(media, cachedImages)
+                }
                 rawVideos = media
+                indexedImages.clear()
+                indexedImages.putAll(cachedImages)
                 searchIndex = index
                 applyFilters()
                 refreshCurrentSearch()
+                startImageIndexing(media, cachedImages.keys)
             } catch (error: Throwable) {
                 _uiState.value = GalleryUiState.Error(error.message ?: "Unknown error")
             }
@@ -380,17 +401,82 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private fun buildSearchIndex(media: List<Video>): List<SearchEntry> =
+    private fun startImageIndexing(
+        media: List<Video>,
+        cachedKeys: Set<String>,
+    ) {
+        imageIndexJob = viewModelScope.launch {
+            val pending = linkedMapOf<String, ImageSearchMetadata>()
+            try {
+                imageSearchIndexer.indexMissing(media, cachedKeys) { photo, metadata ->
+                    pending[photo.imageSearchCacheKey()] = metadata
+                    if (pending.size >= IMAGE_INDEX_UPDATE_BATCH_SIZE) {
+                        applyIndexedImages(pending.toMap())
+                        pending.clear()
+                    }
+                }
+            } finally {
+                if (pending.isNotEmpty()) applyIndexedImages(pending.toMap())
+            }
+        }
+    }
+
+    private suspend fun applyIndexedImages(updates: Map<String, ImageSearchMetadata>) {
+        while (true) {
+            val snapshot = searchIndex
+            val updatedIndex = withContext(Dispatchers.Default) {
+                snapshot.map { entry ->
+                    val metadata =
+                        updates[entry.media.imageSearchCacheKey()] ?: return@map entry
+                    entry.withImageMetadata(metadata)
+                }
+            }
+            // A delete can replace the index while this batch is normalizing
+            // off-thread. Retry against that newer list instead of restoring
+            // an item that has just been removed.
+            if (searchIndex === snapshot) {
+                searchIndex = updatedIndex
+                break
+            }
+        }
+        indexedImages.putAll(updates)
+        if (_searchQuery.value.isNotBlank()) refreshCurrentSearch()
+    }
+
+    private fun buildSearchIndex(
+        media: List<Video>,
+        imageMetadata: Map<String, ImageSearchMetadata>,
+    ): List<SearchEntry> =
         media.map { item ->
             val title = normalizeForSearch(item.title)
             val album = normalizeForSearch(item.bucketName.ifBlank { "Other" })
+            val metadata = imageMetadata[item.imageSearchCacheKey()]
+            val labelValues = metadata?.labels.orEmpty()
+                .map(::normalizeForSearch)
+                .filter { it.isNotBlank() }
             SearchEntry(
                 media = item,
                 title = title,
                 album = album,
+                visionText = normalizeForSearch(metadata?.text.orEmpty()),
+                labels = labelValues.joinToString(" "),
+                labelValues = labelValues,
                 titleWords = WORD_SEPARATOR.split(title).filter { it.isNotBlank() },
             )
         }
+
+    private fun SearchEntry.withImageMetadata(
+        metadata: ImageSearchMetadata,
+    ): SearchEntry {
+        val labelValues = metadata.labels
+            .map(::normalizeForSearch)
+            .filter { it.isNotBlank() }
+        return copy(
+            visionText = normalizeForSearch(metadata.text),
+            labels = labelValues.joinToString(" "),
+            labelValues = labelValues,
+        )
+    }
 
     private suspend fun rankSearch(
         snapshot: List<SearchEntry>,
@@ -433,7 +519,10 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     private fun entryMatches(entry: SearchEntry, terms: List<String>): Boolean =
         terms.isNotEmpty() && terms.all { term ->
-            term in entry.title || term in entry.album
+            term in entry.title ||
+                term in entry.album ||
+                term in entry.visionText ||
+                term in entry.labels
         }
 
     private fun searchScore(
@@ -449,6 +538,10 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             entry.album == phrase -> 520
             entry.album.startsWith(phrase) -> 440
             phrase in entry.album -> 360
+            entry.labelValues.any { it == phrase } -> 340
+            entry.labelValues.any { it.startsWith(phrase) } -> 300
+            phrase in entry.labels -> 260
+            phrase in entry.visionText -> 220
             else -> 0
         }
         terms.forEach { term ->
@@ -456,6 +549,9 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             else if (entry.titleWords.any { it.startsWith(term) }) score += 52
             else if (term in entry.title) score += 30
             if (term in entry.album) score += 18
+            if (entry.labelValues.any { it == term }) score += 44
+            else if (term in entry.labels) score += 26
+            if (term in entry.visionText) score += 20
         }
         return score
     }
@@ -469,6 +565,13 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             "",
         ).lowercase(Locale.ROOT).trim()
 
+    override fun onCleared() {
+        imageIndexJob?.cancel()
+        searchJob?.cancel()
+        imageSearchIndexer.close()
+        super.onCleared()
+    }
+
     private companion object {
         const val MIN_GRID_COLUMNS = 2
         const val MAX_GRID_COLUMNS = 5
@@ -476,6 +579,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         const val INSTANT_SEARCH_RESULTS = 24
         const val INSTANT_SEARCH_SCAN_LIMIT = 384
         const val MAX_SEARCH_RESULTS = 96
+        const val IMAGE_INDEX_UPDATE_BATCH_SIZE = 12
 
         val WORD_SEPARATOR = Regex("[^\\p{L}\\p{N}]+")
         val DIACRITICS = Regex("\\p{M}+")

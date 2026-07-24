@@ -396,7 +396,7 @@ private fun SearchFieldRow(
         ) {
             if (query.isEmpty()) {
                 Text(
-                    "Search photos, videos, albums",
+                    "Search photos, videos, text, labels",
                     color = Color.White.copy(alpha = 0.42f),
                     fontSize = 14.sp,
                     maxLines = 1,
@@ -544,8 +544,10 @@ private fun SearchResultsChamber(
                 }
                 Text(
                     when {
-                        results.isEmpty() && searching -> "Searching titles and albums locally"
-                        results.isEmpty() && showEmpty -> "Try another title or album"
+                        results.isEmpty() && searching ->
+                            "Searching titles, albums, and photo content locally"
+                        results.isEmpty() && showEmpty ->
+                            "Try another title, album, label, or visible text"
                         searching -> "Refining relevance · “${query.trim()}”"
                         else -> "Updates as you type · “${query.trim()}”"
                     },

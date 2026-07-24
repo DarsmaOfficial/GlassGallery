@@ -6,6 +6,8 @@ import android.content.ContentUris
 import android.content.Intent
 import android.provider.MediaStore
 import android.app.Activity
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
@@ -54,6 +56,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
@@ -97,6 +100,7 @@ import com.darsma.glassgallery.ui.components.liquidGlass
 import com.darsma.glassgallery.ui.components.liquidGlassBorder
 import com.darsma.glassgallery.ui.components.opticalGlass
 import com.darsma.glassgallery.ui.gallery.GalleryUiState
+import com.google.mlkit.vision.barcode.common.Barcode
 import kotlinx.coroutines.delay
 import com.darsma.glassgallery.ui.components.pressBounce
 import com.darsma.glassgallery.ui.gallery.GalleryViewModel
@@ -136,6 +140,9 @@ fun PhotoViewerScreen(
     var chromeVisible  by remember { mutableStateOf(true) }
     var detailsVisible by remember { mutableStateOf(false) }
     var slideshowOn    by remember { mutableStateOf(false) }
+    var scanInProgress by remember(photoId) { mutableStateOf(false) }
+    var scanResultsVisible by remember(photoId) { mutableStateOf(false) }
+    var scannedBarcodes by remember(photoId) { mutableStateOf<List<Barcode>>(emptyList()) }
 
     // Photos in the current gallery filter — the slideshow's playlist.
     val galleryState by galleryViewModel.uiState.collectAsState()
@@ -436,7 +443,7 @@ fun PhotoViewerScreen(
                 }
             }
 
-            // ── Bottom chrome: Edit · Slideshow · Wallpaper ────────────────
+            // ── Bottom chrome: Edit · Scan · Slideshow · Wallpaper ─────────
             AnimatedVisibility(
                 visible  = chromeVisible && !slideshowOn,
                 enter    = slideInVertically(initialOffsetY = { it }, animationSpec = Motion.expressive()) +
@@ -457,6 +464,40 @@ fun PhotoViewerScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     BottomAction("Edit", Icons.Rounded.Edit) { onEdit(photoId) }
+                    Spacer(Modifier.width(14.dp))
+                    BottomAction(
+                        label = if (scanInProgress) "Scanning…" else "Scan codes",
+                        icon = Icons.Rounded.QrCodeScanner,
+                        enabled = !scanInProgress,
+                    ) {
+                        scanInProgress = true
+                        scope.launch {
+                            try {
+                                val results = scanPhotoBarcodes(context, photoUri)
+                                if (results.isEmpty()) {
+                                    Toast.makeText(
+                                        context,
+                                        "No codes found",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                } else {
+                                    scannedBarcodes = results
+                                    scanResultsVisible = true
+                                }
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Throwable) {
+                                Log.e("PhotoViewer", "Barcode scan failed", error)
+                                Toast.makeText(
+                                    context,
+                                    "Couldn't scan this photo",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            } finally {
+                                scanInProgress = false
+                            }
+                        }
+                    }
                     Spacer(Modifier.width(14.dp))
                     BottomAction("Slideshow", Icons.Rounded.PlayArrow, enabled = slidePhotos.isNotEmpty()) {
                         slideshowOn = true
@@ -494,6 +535,12 @@ fun PhotoViewerScreen(
                 visible   = detailsVisible,
                 video     = photo,
                 onDismiss = { detailsVisible = false },
+            )
+
+            BarcodeResultsSheet(
+                visible = scanResultsVisible,
+                barcodes = scannedBarcodes,
+                onDismiss = { scanResultsVisible = false },
             )
         }
     }

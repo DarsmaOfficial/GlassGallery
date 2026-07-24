@@ -58,6 +58,7 @@ dependencies {
     implementation(libs.media3.ui)
     implementation(libs.coil.compose)
     implementation(libs.coil.video)
+    implementation(libs.glance.appwidget)
     implementation(libs.mlkit.text.recognition)
     implementation(libs.mlkit.image.labeling)
     debugImplementation(libs.compose.ui.tooling)

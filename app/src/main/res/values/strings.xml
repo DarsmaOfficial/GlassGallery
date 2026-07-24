@@ -2,4 +2,8 @@
 <resources>
     <string name="app_name">Glass Gallery</string>
     <string name="permission_rationale">Storage permission is required to display your videos.\nPlease grant access and relaunch.</string>
+    <string name="widget_favorites_title">Favorites</string>
+    <string name="widget_favorites_empty">Your favorite photos and videos will appear here</string>
+    <string name="widget_favorites_open">Tap to open Glass Gallery</string>
+    <string name="widget_favorites_description">A quick view of your favorite photos and videos</string>
 </resources>

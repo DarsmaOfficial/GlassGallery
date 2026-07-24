@@ -43,6 +43,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.ContentCut
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Pause
@@ -122,6 +123,7 @@ fun PlayerScreen(
     animatedVisibilityScope: AnimatedVisibilityScope,
     sharedTransitionScope: SharedTransitionScope,
     onBack: () -> Unit,
+    onTrim: (Long) -> Unit,
 ) {
     val context = LocalContext.current
     val playbackStore = remember { PlaybackStore(context) }
@@ -374,6 +376,16 @@ fun PlayerScreen(
                         isFavorite = isFavorite,
                         onToggle   = { galleryViewModel.toggleFavorite(videoId) },
                     )
+                    Spacer(Modifier.width(2.dp))
+                    BouncyIconButton(
+                        onClick = {
+                            player.pause()
+                            onTrim(videoId)
+                        },
+                        size = 46.dp,
+                    ) {
+                        Icon(Icons.Rounded.ContentCut, "Trim", tint = Color.White)
+                    }
                     Spacer(Modifier.width(2.dp))
                     // Share.
                     BouncyIconButton(

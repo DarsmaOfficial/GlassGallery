@@ -26,6 +26,7 @@ import com.darsma.glassgallery.ui.gallery.GalleryScreen
 import com.darsma.glassgallery.ui.gallery.GalleryViewModel
 import com.darsma.glassgallery.ui.photo.PhotoViewerScreen
 import com.darsma.glassgallery.ui.player.PlayerScreen
+import com.darsma.glassgallery.ui.trim.VideoTrimScreen
 import com.darsma.glassgallery.ui.trash.TrashScreen
 import com.darsma.glassgallery.ui.editor.PhotoEditorScreen
 import com.darsma.glassgallery.ui.components.Motion
@@ -125,6 +126,22 @@ private fun GlassGalleryNavHost() {
                     animatedVisibilityScope = this,
                     sharedTransitionScope   = this@SharedTransitionLayout,
                     onBack                  = { navController.popBackStack() },
+                    onTrim                  = { id -> navController.navigate("trim/$id") },
+                )
+            }
+
+            composable(
+                route     = "trim/{videoId}",
+                arguments = listOf(navArgument("videoId") { type = NavType.LongType }),
+            ) { backStackEntry ->
+                val trimId = backStackEntry.arguments?.getLong("videoId") ?: return@composable
+                VideoTrimScreen(
+                    videoId = trimId,
+                    onBack  = { navController.popBackStack() },
+                    onSaved = {
+                        galleryViewModel.reload()
+                        navController.popBackStack()
+                    },
                 )
             }
 

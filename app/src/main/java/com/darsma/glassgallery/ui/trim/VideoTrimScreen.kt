@@ -6,6 +6,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
@@ -57,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.transformer.Composition
@@ -80,9 +82,12 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.roundToLong
 
 private val TrimChromeShape = RoundedCornerShape(26.dp)
 private const val MinimumTrimMs = 100L
+private const val MinimumFractionGap = 0.000001f
+private const val EditorOpenFailureMessage = "Couldn't open the editor for this video."
 
 private sealed interface VideoLoadState {
     data object Loading : VideoLoadState
@@ -96,6 +101,18 @@ private sealed interface TrimExportState {
     data object Completed : TrimExportState
     data class Failed(val message: String) : TrimExportState
 }
+
+private data class TrimEditorSetup(
+    val durationMs: Long,
+    val minimumFraction: Float,
+    val player: ExoPlayer,
+)
+
+private data class TrimFractions(
+    val start: Float,
+    val end: Float,
+    val preview: Float,
+)
 
 @Composable
 fun VideoTrimScreen(
@@ -184,30 +201,45 @@ private fun VideoTrimEditor(
     onSaved: () -> Unit,
 ) {
     val context = LocalContext.current
+    val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
-    val durationMs = video.duration.coerceAtLeast(1L)
-    val minimumFraction = (
-        minOf(MinimumTrimMs, durationMs).toFloat() / durationMs.toFloat()
-    ).coerceIn(0.000001f, 1f)
+    val setupResult = remember(appContext, video.id, video.uri, video.duration) {
+        createTrimEditorSetup(appContext, video)
+    }
+    val setup = setupResult.getOrNull()
+    if (setup == null) {
+        TrimMessageScreen(
+            onBack = onBack,
+            message = EditorOpenFailureMessage,
+            loading = false,
+        )
+        return
+    }
+    val durationMs = setup.durationMs
+    val minimumFraction = setup.minimumFraction
+    val player = setup.player
 
     var startFraction by remember(video.id) { mutableFloatStateOf(0f) }
     var endFraction by remember(video.id) { mutableFloatStateOf(1f) }
     var previewFraction by remember(video.id) { mutableFloatStateOf(0f) }
     var isPlaying by remember(video.id) { mutableStateOf(false) }
+    var editorFailure by remember(video.id) { mutableStateOf<String?>(null) }
     var exportState by remember(video.id) { mutableStateOf<TrimExportState>(TrimExportState.Idle) }
     var exportJob by remember(video.id) { mutableStateOf<Job?>(null) }
     var activeTempFile by remember(video.id) { mutableStateOf<File?>(null) }
 
-    val player = remember(video.id) {
-        ExoPlayer.Builder(context).build().also { exoPlayer ->
-            exoPlayer.setMediaItem(MediaItem.fromUri(video.uri))
-            exoPlayer.prepare()
-        }
-    }
-
-    val startMs = (startFraction * durationMs).toLong().coerceIn(0L, durationMs)
-    val endMs = (endFraction * durationMs).toLong().coerceIn(startMs, durationMs)
-    val previewMs = (previewFraction * durationMs).toLong().coerceIn(startMs, endMs)
+    val fractions = normalizeTrimFractions(
+        start = startFraction,
+        end = endFraction,
+        preview = previewFraction,
+        minimumGap = minimumFraction,
+    )
+    val startMs = fractionToPositionMs(fractions.start, durationMs)
+        .coerceIn(0L, durationMs - 1L)
+    val endMs = fractionToPositionMs(fractions.end, durationMs)
+        .coerceIn(startMs + 1L, durationMs)
+    val previewMs = fractionToPositionMs(fractions.preview, durationMs)
+        .coerceIn(startMs, endMs)
     val isExporting = exportState is TrimExportState.Exporting
 
     DisposableEffect(player) {
@@ -215,28 +247,54 @@ private fun VideoTrimEditor(
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
             }
+
+            override fun onPlayerError(error: PlaybackException) {
+                editorFailure = EditorOpenFailureMessage
+            }
         }
-        player.addListener(listener)
+        val listenerAttached = runCatching { player.addListener(listener) }.isSuccess
+        val existingPlayerError = runCatching { player.playerError }.getOrNull()
+        if (!listenerAttached || existingPlayerError != null) {
+            editorFailure = EditorOpenFailureMessage
+        }
         onDispose {
-            exportJob?.cancel()
-            activeTempFile?.delete()
-            player.removeListener(listener)
-            player.release()
+            runCatching { exportJob?.cancel() }
+            runCatching { activeTempFile?.delete() }
+            if (listenerAttached) {
+                runCatching { player.removeListener(listener) }
+            }
+            runCatching { player.release() }
         }
     }
 
-    LaunchedEffect(player, startMs, endMs) {
+    if (editorFailure != null) {
+        TrimMessageScreen(
+            onBack = onBack,
+            message = editorFailure ?: EditorOpenFailureMessage,
+            loading = false,
+        )
+        return
+    }
+
+    LaunchedEffect(player, startMs, endMs, fractions.start, fractions.end) {
         while (true) {
-            val current = player.currentPosition.coerceAtLeast(0L)
-            if (player.isPlaying && current >= endMs) {
-                player.pause()
-                player.seekTo(startMs)
-                previewFraction = startFraction
-            } else if (player.isPlaying) {
-                previewFraction = (current.toFloat() / durationMs).coerceIn(
-                    startFraction,
-                    endFraction,
-                )
+            val updateSucceeded = runCatching {
+                val current = player.currentPosition.coerceAtLeast(0L)
+                if (player.isPlaying && current >= endMs) {
+                    player.pause()
+                    player.seekTo(startMs)
+                    previewFraction = fractions.start
+                } else if (player.isPlaying) {
+                    previewFraction = boundedFraction(
+                        value = current.toDouble().div(durationMs.toDouble()).toFloat(),
+                        minimum = fractions.start,
+                        maximum = fractions.end,
+                    )
+                }
+            }.isSuccess
+            if (!updateSucceeded) {
+                editorFailure = EditorOpenFailureMessage
+                return@LaunchedEffect
             }
             delay(80L)
         }
@@ -303,23 +361,34 @@ private fun VideoTrimEditor(
         ) {
             AndroidView(
                 factory = { viewContext ->
-                    PlayerView(viewContext).apply {
-                        this.player = player
-                        useController = false
+                    runCatching<android.view.View> {
+                        PlayerView(viewContext).apply {
+                            this.player = player
+                            useController = false
+                        }
+                    }.getOrElse {
+                        scope.launch {
+                            editorFailure = EditorOpenFailureMessage
+                        }
+                        FrameLayout(viewContext)
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
             )
             BouncyIconButton(
                 onClick = {
-                    if (player.isPlaying) {
-                        player.pause()
-                    } else {
-                        if (player.currentPosition !in startMs until endMs) {
-                            player.seekTo(startMs)
-                            previewFraction = startFraction
+                    runCatching {
+                        if (player.isPlaying) {
+                            player.pause()
+                        } else {
+                            if (player.currentPosition !in startMs until endMs) {
+                                player.seekTo(startMs)
+                                previewFraction = fractions.start
+                            }
+                            player.play()
                         }
-                        player.play()
+                    }.onFailure {
+                        editorFailure = EditorOpenFailureMessage
                     }
                 },
                 modifier = Modifier.align(Alignment.Center),
@@ -354,25 +423,37 @@ private fun VideoTrimEditor(
             }
 
             RangeSlider(
-                value = startFraction..endFraction,
+                value = fractions.start..fractions.end,
                 onValueChange = { requested ->
+                    val requestedStart = unitFractionOrFallback(
+                        requested.start,
+                        fractions.start,
+                    )
+                    val requestedEnd = unitFractionOrFallback(
+                        requested.endInclusive,
+                        fractions.end,
+                    )
                     val startMoved =
-                        abs(requested.start - startFraction) >= abs(requested.endInclusive - endFraction)
-                    var newStart = requested.start.coerceIn(0f, 1f)
-                    var newEnd = requested.endInclusive.coerceIn(0f, 1f)
-                    if (newEnd - newStart < minimumFraction) {
-                        if (startMoved) {
-                            newStart = (newEnd - minimumFraction).coerceAtLeast(0f)
-                        } else {
-                            newEnd = (newStart + minimumFraction).coerceAtMost(1f)
-                        }
+                        abs(requestedStart - fractions.start) >=
+                            abs(requestedEnd - fractions.end)
+                    val updated = normalizeTrimFractions(
+                        start = requestedStart,
+                        end = requestedEnd,
+                        preview = if (startMoved) requestedStart else requestedEnd,
+                        minimumGap = minimumFraction,
+                        startMoved = startMoved,
+                    )
+                    startFraction = updated.start
+                    endFraction = updated.end
+                    previewFraction = updated.preview
+                    runCatching {
+                        player.pause()
+                        player.seekTo(fractionToPositionMs(updated.preview, durationMs))
+                    }.onFailure {
+                        editorFailure = EditorOpenFailureMessage
                     }
-                    startFraction = newStart
-                    endFraction = newEnd
-                    previewFraction = if (startMoved) newStart else newEnd
-                    player.pause()
-                    player.seekTo((previewFraction * durationMs).toLong())
                 },
+                valueRange = 0f..1f,
                 enabled = !isExporting,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -383,13 +464,22 @@ private fun VideoTrimEditor(
                 style = MaterialTheme.typography.labelMedium,
             )
             Slider(
-                value = previewFraction.coerceIn(startFraction, endFraction),
+                value = fractions.preview,
                 onValueChange = { fraction ->
-                    previewFraction = fraction
-                    player.pause()
-                    player.seekTo((fraction * durationMs).toLong())
+                    val updatedPreview = boundedFraction(
+                        value = fraction,
+                        minimum = fractions.start,
+                        maximum = fractions.end,
+                    )
+                    previewFraction = updatedPreview
+                    runCatching {
+                        player.pause()
+                        player.seekTo(fractionToPositionMs(updatedPreview, durationMs))
+                    }.onFailure {
+                        editorFailure = EditorOpenFailureMessage
+                    }
                 },
-                valueRange = startFraction..endFraction,
+                valueRange = fractions.start..fractions.end,
                 enabled = !isExporting,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -508,6 +598,110 @@ private fun VideoTrimEditor(
             }
         }
     }
+}
+
+private fun createTrimEditorSetup(
+    context: Context,
+    video: Video,
+): Result<TrimEditorSetup> {
+    var player: ExoPlayer? = null
+    return runCatching {
+        val durationMs = video.duration.takeIf { it > 0L } ?: 1L
+        val requestedMinimum = (
+            minOf(MinimumTrimMs, durationMs).toDouble() / durationMs.toDouble()
+        ).toFloat()
+        val minimumFraction = requestedMinimum
+            .takeIf(Float::isFinite)
+            ?.coerceIn(MinimumFractionGap, 1f - MinimumFractionGap)
+            ?: MinimumFractionGap
+
+        val preparedPlayer = ExoPlayer.Builder(context).build()
+        player = preparedPlayer
+        preparedPlayer.setMediaItem(MediaItem.fromUri(video.uri))
+        preparedPlayer.prepare()
+
+        TrimEditorSetup(
+            durationMs = durationMs,
+            minimumFraction = minimumFraction,
+            player = preparedPlayer,
+        )
+    }.onFailure {
+        runCatching { player?.release() }
+    }
+}
+
+private fun normalizeTrimFractions(
+    start: Float,
+    end: Float,
+    preview: Float,
+    minimumGap: Float,
+    startMoved: Boolean? = null,
+): TrimFractions {
+    val gap = minimumGap
+        .takeIf(Float::isFinite)
+        ?.coerceIn(MinimumFractionGap, 1f - MinimumFractionGap)
+        ?: MinimumFractionGap
+    var safeStart = unitFractionOrFallback(start, 0f)
+    var safeEnd = unitFractionOrFallback(end, 1f)
+
+    if (safeStart >= safeEnd || safeEnd - safeStart < gap) {
+        when (startMoved) {
+            true -> {
+                safeEnd = safeEnd.coerceIn(gap, 1f)
+                safeStart = safeEnd - gap
+            }
+            false -> {
+                safeStart = safeStart.coerceIn(0f, 1f - gap)
+                safeEnd = safeStart + gap
+            }
+            null -> {
+                if (safeStart < safeEnd) {
+                    if (safeStart <= 1f - gap) {
+                        safeEnd = safeStart + gap
+                    } else {
+                        safeStart = 1f - gap
+                        safeEnd = 1f
+                    }
+                } else {
+                    safeStart = 0f
+                    safeEnd = 1f
+                }
+            }
+        }
+    }
+
+    if (!safeStart.isFinite() || !safeEnd.isFinite() || safeStart >= safeEnd) {
+        safeStart = 0f
+        safeEnd = 1f
+    }
+    return TrimFractions(
+        start = safeStart,
+        end = safeEnd,
+        preview = boundedFraction(preview, safeStart, safeEnd),
+    )
+}
+
+private fun unitFractionOrFallback(value: Float, fallback: Float): Float {
+    val finiteValue = value.takeIf(Float::isFinite)
+        ?: fallback.takeIf(Float::isFinite)
+        ?: 0f
+    return finiteValue.coerceIn(0f, 1f)
+}
+
+private fun boundedFraction(value: Float, minimum: Float, maximum: Float): Float {
+    val safeMinimum = unitFractionOrFallback(minimum, 0f)
+    val safeMaximum = unitFractionOrFallback(maximum, 1f)
+    if (safeMinimum >= safeMaximum) {
+        return safeMinimum
+    }
+    return unitFractionOrFallback(value, safeMinimum).coerceIn(safeMinimum, safeMaximum)
+}
+
+private fun fractionToPositionMs(fraction: Float, durationMs: Long): Long {
+    val safeDuration = durationMs.coerceAtLeast(1L)
+    return (unitFractionOrFallback(fraction, 0f).toDouble() * safeDuration.toDouble())
+        .roundToLong()
+        .coerceIn(0L, safeDuration)
 }
 
 @Composable

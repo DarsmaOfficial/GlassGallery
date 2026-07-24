@@ -90,7 +90,6 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.darsma.glassgallery.data.Video
-import com.darsma.glassgallery.ui.components.BouncyIconButton
 import com.darsma.glassgallery.ui.components.Motion
 import com.darsma.glassgallery.ui.components.liquidGlassBorder
 import com.darsma.glassgallery.ui.components.pressBounce
@@ -273,7 +272,7 @@ fun DynamicIslandSearch(
                     searching = searching,
                     progress = contentStage,
                     onResultClick = onResultClick,
-                    modifier = Modifier.fillMaxSize().padding(top = 10.dp),
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
         }
@@ -387,7 +386,7 @@ private fun SearchFieldRow(
         Box(
             modifier = Modifier
                 .weight(1f)
-                .padding(start = 10.dp, end = 4.dp)
+                .padding(start = 10.dp, end = 8.dp)
                 .graphicsLayer {
                     alpha = fieldAlpha
                     translationX = (1f - fieldAlpha) * 14f
@@ -418,38 +417,49 @@ private fun SearchFieldRow(
                 // Enter is only a keyboard-dismiss action. Filtering happens
                 // in real time from onValueChange and never waits for IME submit.
                 keyboardActions = KeyboardActions(onSearch = { onSearchIme() }),
-                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
-            )
-        }
-
-        if (active && query.isNotEmpty()) {
-            val clearInteraction = remember { MutableInteractionSource() }
-            Box(
                 modifier = Modifier
-                    .pressBounce(clearInteraction, 0.82f, Motion.snappy(), haptic = false)
-                    .size(30.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.075f))
-                    .clickable(
-                        interactionSource = clearInteraction,
-                        indication = null,
-                    ) {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onQueryChange("")
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Rounded.Close,
-                    "Clear search",
-                    tint = Color.White.copy(alpha = 0.76f),
-                    modifier = Modifier.size(14.dp),
-                )
+                    .fillMaxWidth()
+                    .padding(end = if (active && query.isNotEmpty()) 34.dp else 0.dp)
+                    .focusRequester(focusRequester),
+            )
+            if (active && query.isNotEmpty()) {
+                val clearInteraction = remember { MutableInteractionSource() }
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .pressBounce(clearInteraction, 0.84f, Motion.snappy(), haptic = false)
+                        .size(27.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.07f))
+                        .clickable(
+                            interactionSource = clearInteraction,
+                            indication = null,
+                        ) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onQueryChange("")
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Rounded.Close,
+                        "Clear search",
+                        tint = Color.White.copy(alpha = 0.70f),
+                        modifier = Modifier.size(13.dp),
+                    )
+                }
             }
-            Spacer(Modifier.width(5.dp))
         }
 
         if (active || fieldAlpha > 0.45f) {
+            Spacer(Modifier.width(2.dp))
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(20.dp)
+                    .background(Color.White.copy(alpha = 0.11f))
+                    .graphicsLayer { alpha = fieldAlpha },
+            )
+            Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier.graphicsLayer {
                     alpha = fieldAlpha
@@ -457,20 +467,32 @@ private fun SearchFieldRow(
                     scaleY = 0.78f + 0.22f * fieldAlpha
                 },
             ) {
-                BouncyIconButton(
-                    onClick = onClose,
-                    size = 36.dp,
-                    background = Color.White.copy(alpha = 0.075f),
+                val closeInteraction = remember { MutableInteractionSource() }
+                Box(
+                    modifier = Modifier
+                        .pressBounce(closeInteraction, 0.92f, Motion.snappy(), haptic = false)
+                        .height(34.dp)
+                        .clip(RoundedCornerShape(17.dp))
+                        .background(Color(0xFFC8B5FF).copy(alpha = 0.14f))
+                        .clickable(
+                            interactionSource = closeInteraction,
+                            indication = null,
+                        ) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onClose()
+                        }
+                        .padding(horizontal = 12.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        Icons.Rounded.Close,
-                        "Close search",
-                        tint = Color.White.copy(alpha = 0.95f),
-                        modifier = Modifier.size(17.dp),
+                    Text(
+                        text = "Done",
+                        color = Color.White.copy(alpha = 0.94f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(10.dp))
         }
     }
 }
@@ -503,11 +525,13 @@ private fun SearchResultsChamber(
 
     Column(modifier = modifier) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 7.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 18.dp, top = 18.dp, end = 18.dp, bottom = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            LiveSearchGlyph(progress, Modifier.size(28.dp))
-            Spacer(Modifier.width(9.dp))
+            LiveSearchGlyph(progress, Modifier.size(30.dp))
+            Spacer(Modifier.width(11.dp))
             Column(modifier = Modifier.weight(1f)) {
                 // Only the count label transforms. The query subtitle stays in
                 // place while typing, so every key no longer restarts a full
@@ -525,6 +549,9 @@ private fun SearchResultsChamber(
                             ) + fadeOut(Motion.snappy()))
                     },
                     label = "live-search-count",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp),
                 ) { (count, refining) ->
                     Text(
                         when {
@@ -537,7 +564,7 @@ private fun SearchResultsChamber(
                         },
                         color = Color.White.copy(alpha = 0.97f),
                         fontSize = 13.sp,
-                        lineHeight = 15.sp,
+                        lineHeight = 17.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                     )
@@ -553,7 +580,7 @@ private fun SearchResultsChamber(
                     },
                     color = Color.White.copy(alpha = 0.43f),
                     fontSize = 10.sp,
-                    lineHeight = 12.sp,
+                    lineHeight = 13.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

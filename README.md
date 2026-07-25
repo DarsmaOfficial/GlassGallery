@@ -10,6 +10,16 @@ A native Android media gallery built entirely with Jetpack Compose, with a disti
 surfaces, specular light sheens, and physics-based spring motion throughout, without
 a single backdrop blur.
 
+## Download
+
+Grab the latest APK straight from
+[**Releases**](https://github.com/DarsmaOfficial/GlassGallery/releases/latest) —
+CI rebuilds and republishes it automatically on every push to `main`.
+
+The published build is a universal debug APK that bundles the on-device ML models for
+every CPU architecture, so it is large (~264 MB) by design. Nothing is downloaded at
+runtime, which is why everything works with no network permission.
+
 ## Features
 
 - **Unified media grid** — photos and videos together, with a timeline view grouped
@@ -27,6 +37,22 @@ a single backdrop blur.
   system-confirmed `MediaStore` operations.
 - **Pinch-to-resize grid density**, remembered per tab.
 
+### On-device intelligence
+
+All of this runs locally on the device. No cloud calls, no API keys, no accounts, no
+quotas, no free tier — the models ship inside the APK.
+
+- **Content-aware search** — on-device OCR and image labelling index your photos, so
+  searching matches text *inside* a picture and what the picture is *of*, not just
+  filenames.
+- **Favorites home-screen widget** — a Glance widget surfacing your favourited media
+  straight on the launcher.
+- **Video trim & export** — cut a clip and export it with Media3 Transformer, written
+  back as a new `MediaStore` entry.
+- **Portrait background blur** — selfie segmentation separates subject from
+  background in the photo editor.
+- **Barcode & QR scanning** — read codes out of any photo already in your gallery.
+
 Everything runs fully offline against local `MediaStore` content — no backend, no
 accounts, no analytics, no ads.
 
@@ -39,6 +65,12 @@ accounts, no analytics, no ads.
   gradient-only fallback on older devices
 - Compose's `SharedTransitionLayout` for grid ↔ fullscreen and MiniPlayer ↔ player
   morphs
+- [Media3 Transformer](https://developer.android.com/media/media3/transformer) for
+  video trimming and export
+- [ML Kit](https://developers.google.com/ml-kit) — text recognition, image labelling,
+  selfie segmentation, and barcode scanning, all bundled and running on-device
+- [Glance](https://developer.android.com/develop/ui/compose/glance) for the
+  home-screen widget
 
 ## Building
 

@@ -71,7 +71,6 @@ import androidx.media3.ui.PlayerView
 import com.darsma.glassgallery.data.MediaStoreVideoSource
 import com.darsma.glassgallery.data.Video
 import com.darsma.glassgallery.ui.components.BouncyIconButton
-import com.darsma.glassgallery.ui.components.glassSheen
 import com.darsma.glassgallery.ui.components.liquidGlass
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -319,7 +318,6 @@ private fun VideoTrimEditor(
                 .fillMaxWidth()
                 .clip(TrimChromeShape)
                 .liquidGlass(alpha = 0.42f)
-                .glassSheen()
                 .padding(horizontal = 6.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -411,7 +409,6 @@ private fun VideoTrimEditor(
                 .fillMaxWidth()
                 .clip(TrimChromeShape)
                 .liquidGlass(alpha = 0.50f)
-                .glassSheen()
                 .padding(horizontal = 18.dp, vertical = 14.dp),
         ) {
             Row(

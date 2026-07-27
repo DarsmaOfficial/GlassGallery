@@ -75,10 +75,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -94,12 +92,13 @@ import com.darsma.glassgallery.ui.components.Motion
 import com.darsma.glassgallery.ui.components.MediaDetailsSheet
 import com.darsma.glassgallery.ui.components.MorphingPlayPauseButton
 import com.darsma.glassgallery.ui.components.favoriteBurst
-import com.darsma.glassgallery.ui.components.glassSheen
 import com.darsma.glassgallery.ui.components.SmoothSeekBar
 import com.darsma.glassgallery.ui.components.liquidGlass
 import com.darsma.glassgallery.ui.components.opticalGlass
 import com.darsma.glassgallery.ui.components.pressBounce
+import com.darsma.glassgallery.ui.components.specularFlash
 import com.darsma.glassgallery.ui.gallery.GalleryViewModel
+import com.darsma.glassgallery.ui.theme.TabularFigures
 import kotlinx.coroutines.delay
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -337,7 +336,7 @@ fun PlayerScreen(
                         .clip(ControlsShape)
                         .liquidGlass(alpha = 0.42f)
                         .opticalGlass(intensity = 0.76f)
-                        .glassSheen()
+                        .specularFlash(trigger = isPlaying)
                         .padding(horizontal = 6.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -352,8 +351,7 @@ fun PlayerScreen(
                     ) {
                         Text(
                             text       = video?.title ?: "",
-                            style      = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
+                            style      = MaterialTheme.typography.titleMedium,
                             color      = Color.White,
                             maxLines   = 1,
                             overflow   = TextOverflow.Ellipsis,
@@ -366,7 +364,7 @@ fun PlayerScreen(
                         ) {
                             Text(
                                 text     = video?.readableSize ?: "",
-                                fontSize = 11.sp,
+                                style    = MaterialTheme.typography.labelMedium.merge(TabularFigures),
                                 color    = Color.White.copy(alpha = 0.55f),
                             )
                         }
@@ -445,7 +443,7 @@ fun PlayerScreen(
                         .clip(ControlsShape)
                         .liquidGlass(alpha = 0.50f)
                         .opticalGlass(intensity = 0.84f)
-                        .glassSheen()
+                        .specularFlash(trigger = isPlaying)
                         .padding(horizontal = 18.dp, vertical = 14.dp),
                 ) {
                     val durationMs = duration.coerceAtLeast(1L)
@@ -471,7 +469,7 @@ fun PlayerScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text  = livePos.formatMs(),
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelMedium.merge(TabularFigures),
                             color = Color.White,
                         )
                         Spacer(Modifier.weight(1f))
@@ -484,7 +482,7 @@ fun PlayerScreen(
                         Spacer(Modifier.weight(1f))
                         Text(
                             text  = durationMs.formatMs(),
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelMedium.merge(TabularFigures),
                             color = Color.White,
                         )
                     }
@@ -538,7 +536,7 @@ private fun InfoChip(label: String, value: String) {
     ) {
         Text(
             text     = label,
-            fontSize = 10.sp,
+            style    = MaterialTheme.typography.labelSmall,
             color    = Color.White.copy(alpha = 0.50f),
         )
         Spacer(Modifier.width(6.dp))
@@ -549,8 +547,7 @@ private fun InfoChip(label: String, value: String) {
         ) { v ->
             Text(
                 text       = v,
-                fontSize   = 12.sp,
-                fontWeight = FontWeight.SemiBold,
+                style      = MaterialTheme.typography.labelMedium.merge(TabularFigures),
                 color      = Color.White,
             )
         }
@@ -639,8 +636,7 @@ private fun SpeedPill(currentSpeed: Float, onSpeedChange: (Float) -> Unit) {
         ) { label ->
             Text(
                 text       = label,
-                fontSize   = 13.sp,
-                fontWeight = FontWeight.Bold,
+                style      = MaterialTheme.typography.labelLarge.merge(TabularFigures),
                 color      = MaterialTheme.colorScheme.primary,
             )
         }

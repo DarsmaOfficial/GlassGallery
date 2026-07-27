@@ -7,9 +7,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Icon
@@ -38,18 +37,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.darsma.glassgallery.data.SortOrder
+import com.darsma.glassgallery.ui.components.GlassSurface
 import com.darsma.glassgallery.ui.components.Motion
-import com.darsma.glassgallery.ui.components.glassSheen
-import com.darsma.glassgallery.ui.components.liquidGlassBorder
+import com.darsma.glassgallery.ui.components.specularFlash
+import com.darsma.glassgallery.ui.theme.GlassRole
+import com.darsma.glassgallery.ui.theme.GlassStyle
+import com.darsma.glassgallery.ui.theme.GlassTheme
+import com.darsma.glassgallery.ui.theme.PillShape
 import kotlinx.coroutines.delay
-
-private val SheetShape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp)
-private val RowShape   = RoundedCornerShape(16.dp)
 
 /**
  * A glass bottom-sheet for picking the gallery sort order. Animates in with a
@@ -94,47 +94,48 @@ fun SortSheet(
         modifier = Modifier.fillMaxSize(),
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-            Column(
+            val sheetShape = MaterialTheme.shapes.extraLarge
+            GlassSurface(
+                backdrop = null,
+                role = GlassRole.Modal,
+                shape = sheetShape,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(SheetShape)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color(0xFF221C3E), Color(0xFF161227)),
-                        )
-                    )
-                    .glassSheen()
-                    .liquidGlassBorder(SheetShape)
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 18.dp),
+                    .fillMaxWidth(),
             ) {
-                // Grabber handle.
-                Box(
+                Box(Modifier.matchParentSize().specularFlash(trigger = Unit))
+                Column(
                     modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .width(38.dp)
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(Color.White.copy(alpha = 0.22f))
-                )
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    text       = "Sort videos",
-                    fontSize   = 19.sp,
-                    fontWeight = FontWeight.Bold,
-                    color      = Color.White,
-                    modifier   = Modifier.padding(start = 6.dp, bottom = 8.dp),
-                )
-
-                SortOrder.entries.forEachIndexed { index, order ->
-                    SortRow(
-                        order    = order,
-                        selected = order == current,
-                        index    = index,
-                        onClick  = { onSelect(order) },
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 18.dp),
+                ) {
+                    // Grabber handle.
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .width(38.dp)
+                            .height(4.dp)
+                            .clip(PillShape)
+                            .background(Color.White.copy(alpha = 0.22f))
                     )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = "Sort videos",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color.White,
+                        modifier = Modifier.padding(start = 6.dp, bottom = 8.dp),
+                    )
+
+                    SortOrder.entries.forEachIndexed { index, order ->
+                        SortRow(
+                            order    = order,
+                            selected = order == current,
+                            index    = index,
+                            onClick  = { onSelect(order) },
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
                 }
-                Spacer(Modifier.height(4.dp))
             }
         }
     }
@@ -165,6 +166,8 @@ private fun SortRow(
         animationSpec = Motion.standard(),
         label         = "sort-row-bg",
     )
+    val inlineStyle = GlassTheme.tokens.styleFor(GlassRole.Inline)
+    val rowShape = MaterialTheme.shapes.medium
 
     Row(
         modifier = Modifier
@@ -174,10 +177,12 @@ private fun SortRow(
             }
             .fillMaxWidth()
             .padding(vertical = 3.dp)
-            .clip(RowShape)
+            .clip(rowShape)
+            .background(inlineStyle.tint.copy(alpha = inlineStyle.tintAlpha))
             .background(
                 MaterialTheme.colorScheme.primary.copy(alpha = 0.18f * bg)
             )
+            .glassTokenBorder(rowShape, inlineStyle)
             .clickable(
                 interactionSource = interaction,
                 indication        = null,
@@ -187,11 +192,10 @@ private fun SortRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text       = order.label,
-            fontSize   = 15.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color      = if (selected) Color.White else Color.White.copy(alpha = 0.78f),
-            modifier   = Modifier.weight(1f),
+            text = order.label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (selected) Color.White else Color.White.copy(alpha = 0.78f),
+            modifier = Modifier.weight(1f),
         )
         // Check mark pops in when selected.
         AnimatedVisibility(
@@ -202,7 +206,7 @@ private fun SortRow(
             Box(
                 modifier = Modifier
                     .size(22.dp)
-                    .clip(RoundedCornerShape(50))
+                    .clip(PillShape)
                     .background(MaterialTheme.colorScheme.primary),
                 contentAlignment = Alignment.Center,
             ) {
@@ -216,3 +220,21 @@ private fun SortRow(
         }
     }
 }
+
+private fun Modifier.glassTokenBorder(
+    shape: Shape,
+    style: GlassStyle,
+): Modifier = border(
+    width = style.borderWidth,
+    brush = Brush.linearGradient(
+        colors = listOf(
+            Color.White.copy(alpha = style.rimLightAlpha),
+            Color.White.copy(alpha = style.rimLightAlpha * 0.12f),
+            Color.Black.copy(alpha = style.rimDarkAlpha * 0.12f),
+            Color.Black.copy(alpha = style.rimDarkAlpha),
+        ),
+        start = Offset.Zero,
+        end = Offset.Infinite,
+    ),
+    shape = shape,
+)

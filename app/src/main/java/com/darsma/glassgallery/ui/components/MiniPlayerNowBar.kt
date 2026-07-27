@@ -50,10 +50,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -122,8 +120,7 @@ fun MiniPlayer(
                         )
                     )
                     .opticalGlass(intensity = 0.82f)
-                    .glassSheen()
-                    .liquidHighlight()
+                    .specularFlash(trigger = video.id)
                     .clickable(
                         interactionSource = interaction,
                         indication        = null,
@@ -183,8 +180,7 @@ fun MiniPlayer(
                     ) {
                         Text(
                             text       = video.title,
-                            style      = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
+                            style      = MaterialTheme.typography.titleMedium,
                             color      = Color.White,
                             maxLines   = 1,
                             overflow   = TextOverflow.Ellipsis,
@@ -194,7 +190,7 @@ fun MiniPlayer(
                         Spacer(Modifier.height(3.dp))
                         Text(
                             text     = "Now Playing",
-                            fontSize = 11.sp,
+                            style    = MaterialTheme.typography.labelMedium,
                             color    = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
                         )
                         Spacer(Modifier.height(7.dp))

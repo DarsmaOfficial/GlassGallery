@@ -62,7 +62,6 @@ import com.darsma.glassgallery.data.Video
 import com.darsma.glassgallery.ui.components.AuroraBackground
 import com.darsma.glassgallery.ui.components.BouncyIconButton
 import com.darsma.glassgallery.ui.components.Motion
-import com.darsma.glassgallery.ui.components.glassSheen
 import com.darsma.glassgallery.ui.components.liquidGlass
 import com.darsma.glassgallery.ui.components.liquidGlassBorder
 import com.darsma.glassgallery.ui.components.pressBounce
@@ -107,7 +106,6 @@ fun TrashScreen(onBack: () -> Unit) {
                     .padding(horizontal = 14.dp, vertical = 10.dp)
                     .clip(RoundedCornerShape(26.dp))
                     .liquidGlass(alpha = 0.45f)
-                    .glassSheen()
                     .padding(horizontal = 6.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

@@ -88,7 +88,6 @@ import androidx.compose.ui.unit.sp
 import com.darsma.glassgallery.ui.components.BouncyIconButton
 import com.darsma.glassgallery.ui.components.LiquidTabBar
 import com.darsma.glassgallery.ui.components.Motion
-import com.darsma.glassgallery.ui.components.glassSheen
 import com.darsma.glassgallery.ui.components.liquidGlass
 import com.darsma.glassgallery.ui.components.liquidGlassBorder
 import com.darsma.glassgallery.ui.components.pressBounce
@@ -331,7 +330,6 @@ fun PhotoEditorScreen(
                 .padding(horizontal = 14.dp, vertical = 10.dp)
                 .clip(ChromeShape)
                 .liquidGlass(alpha = 0.42f)
-                .glassSheen()
                 .padding(horizontal = 6.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -497,7 +495,6 @@ fun PhotoEditorScreen(
                         modifier = Modifier
                             .clip(ChromeShape)
                             .liquidGlass(alpha = 0.55f)
-                            .glassSheen()
                             .liquidGlassBorder(ChromeShape)
                             .padding(horizontal = 20.dp, vertical = 14.dp),
                         horizontalArrangement = Arrangement.spacedBy(22.dp),
@@ -534,7 +531,6 @@ fun PhotoEditorScreen(
                             .fillMaxWidth()
                             .clip(ChromeShape)
                             .liquidGlass(alpha = 0.55f)
-                            .glassSheen()
                             .liquidGlassBorder(ChromeShape)
                             .padding(horizontal = 18.dp, vertical = 14.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -589,7 +585,6 @@ fun PhotoEditorScreen(
                     .pressBounce(originalInteraction, pressedScale = 0.96f, spec = Motion.snappy(), haptic = false)
                     .clip(PillShape)
                     .liquidGlass(alpha = if (comparingOriginal) 0.64f else 0.38f)
-                    .glassSheen()
                     .liquidGlassBorder(PillShape)
                     .pointerInput(Unit) {
                         detectTapGestures(

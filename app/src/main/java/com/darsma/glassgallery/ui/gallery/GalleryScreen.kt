@@ -63,9 +63,9 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
@@ -80,7 +80,6 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -108,21 +107,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.foundation.text.BasicTextField
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import coil3.request.ImageRequest
@@ -134,23 +124,26 @@ import com.darsma.glassgallery.data.formatBytes
 import com.darsma.glassgallery.data.toTimeline
 import com.darsma.glassgallery.ui.components.AuroraBackground
 import com.darsma.glassgallery.ui.components.BouncyIconButton
+import com.darsma.glassgallery.ui.components.GlassBackdropHost
+import com.darsma.glassgallery.ui.components.GlassSurface
 import com.darsma.glassgallery.ui.components.LiquidTabBar
 import com.darsma.glassgallery.ui.components.liquidGlass
 import com.darsma.glassgallery.ui.components.Motion
 import com.darsma.glassgallery.ui.components.MiniPlayer
-import com.darsma.glassgallery.ui.components.glassSheen
 import com.darsma.glassgallery.ui.components.liquidGlassBorder
-import com.darsma.glassgallery.ui.components.liquidHighlight
 import com.darsma.glassgallery.ui.components.favoriteBurst
 import com.darsma.glassgallery.ui.components.pressBounce
+import com.darsma.glassgallery.ui.components.rememberGlassBackdropState
 import com.darsma.glassgallery.ui.components.shimmer
+import com.darsma.glassgallery.ui.components.specularFlash
 import com.darsma.glassgallery.ui.components.touchLens
 import com.darsma.glassgallery.ui.components.opticalGlass
+import com.darsma.glassgallery.ui.theme.GlassRole
+import com.darsma.glassgallery.ui.theme.PillShape
+import com.darsma.glassgallery.ui.theme.TabularFigures
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val CardShape = RoundedCornerShape(20.dp)
-private val PillShape = RoundedCornerShape(50)
 private val MINI_PLAYER_HEIGHT = 92.dp
 
 private data class TimelineJump(val label: String, val itemIndex: Int)
@@ -230,20 +223,18 @@ fun GalleryScreen(
     // Hoisted grid state — drives the scroll-aware glass header and scrubber.
     val gridState = rememberLazyGridState()
     val screenScope = rememberCoroutineScope()
-    val headerScrolled by remember {
+    val headerGlass = remember {
         derivedStateOf {
-            gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 16
+            if (gridState.firstVisibleItemIndex > 0) {
+                1f
+            } else {
+                (gridState.firstVisibleItemScrollOffset / 120f).coerceIn(0f, 1f)
+            }
         }
     }
-    val headerGlass by animateFloatAsState(
-        targetValue   = if (headerScrolled) 1f else 0f,
-        animationSpec = Motion.standard(),
-        label         = "header-glass",
-    )
     // Pinch-to-resize is remembered independently for every tab.
     val gridColumns = (gridColumnsByTab[mediaFilter]
         ?: if (mediaFilter == MediaFilter.PHOTOS) 3 else 2).coerceIn(2, 5)
-    val denseGrid = gridColumns >= 3
 
     // ── Sticky timeline chip ────────────────────────────────────────────────
     // Mirrors the grid's item order (headers count as items) so the label at
@@ -296,11 +287,16 @@ fun GalleryScreen(
         label = "dynamic-island-scene",
     )
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-    ) {
+    val backdropState = rememberGlassBackdropState()
+    GlassBackdropHost(
+        state = backdropState,
+        modifier = Modifier.fillMaxSize(),
+        source = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background),
+            ) {
         // Keep the gallery alive only while it is visible or completing its
         // departure. Once search owns the screen, the thumbnail grid and its
         // ambient effects leave composition entirely instead of consuming
@@ -391,7 +387,7 @@ fun GalleryScreen(
                                         else
                                             "No media found.",
                                         color     = Color.White.copy(alpha = 0.55f),
-                                        fontSize  = 15.sp,
+                                        style     = MaterialTheme.typography.bodyLarge,
                                         modifier  = Modifier.padding(32.dp),
                                     )
                                 }
@@ -494,34 +490,66 @@ fun GalleryScreen(
                     }
                     }
                 }
+            }
+        }
+            }
+        },
+        overlay = {
+            if (!searchExpanded || searchScene < 0.995f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            alpha = (1f - searchScene * 1.08f).coerceIn(0f, 1f)
+                            scaleX = 1f - 0.032f * searchScene
+                            scaleY = 1f - 0.032f * searchScene
+                            translationY = 18f * searchScene
+                            transformOrigin = TransformOrigin(0.5f, 0.18f)
+                        },
+                ) {
 
                 // ── Floating glass header: transparent at rest, frosts on scroll ──
                 val successState = uiState as? GalleryUiState.Success
                 val mediaList    = successState?.videos ?: emptyList()
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Color(0xFF0B0918).copy(
-                                alpha = (0.74f * headerGlass).coerceAtMost(0.82f)
-                            )
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    GlassSurface(
+                        backdrop = backdropState,
+                        role = GlassRole.Chrome,
+                        shape = RectangleShape,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer { alpha = headerGlass.value },
+                    ) {
+                        // This sizing layer keeps the blur behind the status bar.
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .statusBarsPadding(),
+                        ) {
+                            Spacer(Modifier.height(58.dp))
+                        }
+                    }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding(),
+                    ) {
+                        GalleryHeader(
+                            collapse       = headerGlass.value,
+                            videoCount     = mediaList.count { it.isVideo },
+                            photoCount     = mediaList.count { !it.isVideo },
+                            totalSizeBytes = mediaList.sumOf { it.sizeBytes },
+                            favoritesOnly  = favoritesOnly,
+                            onToggleFavs   = { viewModel.toggleFavoritesFilter() },
+                            onOpenSort     = { sortSheetVisible = true },
                         )
-                        .statusBarsPadding(),
-                ) {
-                    GalleryHeader(
-                        collapse       = headerGlass,
-                        videoCount     = mediaList.count { it.isVideo },
-                        photoCount     = mediaList.count { !it.isVideo },
-                        totalSizeBytes = mediaList.sumOf { it.sizeBytes },
-                        favoritesOnly  = favoritesOnly,
-                        onToggleFavs   = { viewModel.toggleFavoritesFilter() },
-                        onOpenSort     = { sortSheetVisible = true },
-                    )
+                    }
                 }
 
                 // Compact sticky context chip: useful, but never competes with media.
                 AnimatedVisibility(
-                    visible = !searchExpanded && headerScrolled && stickyLabel != null &&
+                    visible = !searchExpanded && headerGlass.value > (16f / 120f) &&
+                        stickyLabel != null &&
                         !(mediaFilter == MediaFilter.ALBUMS && openAlbum == null),
                     enter = slideInVertically(initialOffsetY = { -it }, animationSpec = Motion.expressive()) +
                         fadeIn(Motion.standard()),
@@ -551,9 +579,7 @@ fun GalleryScreen(
                         ) {
                             Text(
                                 text = label,
-                                fontSize = 11.sp,
-                                lineHeight = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.labelMedium.merge(TabularFigures),
                                 color = Color.White.copy(alpha = 0.92f),
                                 maxLines = 1,
                             )
@@ -641,8 +667,7 @@ fun GalleryScreen(
                             .height(52.dp)
                             .clip(PillShape)
                             .liquidGlass(alpha = 0.62f)
-                            .glassSheen()
-                            .liquidHighlight()
+                            .specularFlash(trigger = selectedIds.size)
                             .liquidGlassBorder(PillShape)
                             .padding(horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -656,15 +681,14 @@ fun GalleryScreen(
                         ) { count ->
                             Text(
                                 text       = "$count",
-                                fontSize   = 15.sp,
-                                fontWeight = FontWeight.Bold,
+                                style      = MaterialTheme.typography.labelLarge.merge(TabularFigures),
                                 color      = MaterialTheme.colorScheme.primary,
                                 modifier   = Modifier.padding(start = 10.dp),
                             )
                         }
                         Text(
                             text     = " selected",
-                            fontSize = 13.sp,
+                            style    = MaterialTheme.typography.labelLarge,
                             color    = Color.White.copy(alpha = 0.70f),
                             modifier = Modifier.padding(end = 10.dp),
                         )
@@ -757,7 +781,8 @@ fun GalleryScreen(
             },
             modifier = Modifier.fillMaxSize(),
         )
-    }
+        },
+    )
 }
 
 @Composable
@@ -821,9 +846,7 @@ private fun GalleryHeader(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.app_name),
-                    fontSize = 25.sp,
-                    lineHeight = 27.sp,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleLarge,
                     color = Color(0xFFF7F3FF),
                     maxLines = 1,
                     softWrap = false,
@@ -842,8 +865,7 @@ private fun GalleryHeader(
                                 if (favoritesOnly) "No favorites" else "Your media library"
                             else -> "$videos videos  ·  $photos photos  ·  ${formatBytes(size)}"
                         },
-                        fontSize = 11.sp,
-                        lineHeight = 13.sp,
+                        style = MaterialTheme.typography.bodyMedium.merge(TabularFigures),
                         color = Color.White.copy(alpha = 0.48f - collapse * 0.08f),
                         maxLines = 1,
                         softWrap = false,
@@ -895,77 +917,6 @@ private fun GalleryHeader(
             // The root-level DynamicIslandSearch owns this exact 38dp slot,
             // allowing the orb to morph without being clipped by the header.
             Spacer(Modifier.size(38.dp))
-        }
-    }
-}
-
-/**
- * All / Videos / Photos segmented control. The selected indicator is a glass
- * pill that glides between segments with an expressive spring — the morphing
- * heart of media-type switching.
- */
-@Composable
-private fun MediaFilterTabs(
-    current: MediaFilter,
-    onSelect: (MediaFilter) -> Unit,
-) {
-    val options = listOf(
-        MediaFilter.ALL    to "All",
-        MediaFilter.VIDEOS to "Videos",
-        MediaFilter.PHOTOS to "Photos",
-    )
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, bottom = 10.dp)
-            .height(42.dp)
-            .clip(PillShape)
-            .background(Color.White.copy(alpha = 0.06f))
-            .liquidGlassBorder(PillShape),
-    ) {
-        val segWidth      = maxWidth / options.size
-        val selectedIndex = options.indexOfFirst { it.first == current }.coerceAtLeast(0)
-        val indicatorX by animateDpAsState(
-            targetValue   = segWidth * selectedIndex,
-            animationSpec = Motion.expressive(),
-            label         = "tab-indicator",
-        )
-        Box(
-            modifier = Modifier
-                .offset(x = indicatorX)
-                .width(segWidth)
-                .fillMaxHeight()
-                .padding(4.dp)
-                .clip(PillShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.30f))
-                .liquidGlassBorder(PillShape),
-        )
-        Row(Modifier.fillMaxSize()) {
-            options.forEach { (filter, label) ->
-                val selected = filter == current
-                val textAlpha by animateFloatAsState(
-                    targetValue   = if (selected) 1f else 0.55f,
-                    animationSpec = Motion.standard(),
-                    label         = "tab-text-alpha",
-                )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication        = null,
-                        ) { onSelect(filter) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text       = label,
-                        fontSize   = 13.sp,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                        color      = Color.White.copy(alpha = textAlpha),
-                    )
-                }
-            }
         }
     }
 }
@@ -1200,9 +1151,7 @@ private fun VideoCard(
         if (!dense) {
             Text(
                 text = video.title,
-                fontSize = 12.sp,
-                lineHeight = 13.sp,
-                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.labelMedium,
                 color = Color.White,
                 maxLines = 1,
                 softWrap = false,
@@ -1368,7 +1317,7 @@ private fun InfoBadge(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(if (compact) 5.dp else 7.dp))
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(Color.Black.copy(alpha = 0.56f))
             .padding(
                 horizontal = if (compact) 4.dp else 6.dp,
@@ -1377,9 +1326,7 @@ private fun InfoBadge(
     ) {
         Text(
             text = formatDuration(durationMs),
-            fontSize = if (compact) 8.sp else 9.sp,
-            lineHeight = if (compact) 9.sp else 10.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.labelSmall.merge(TabularFigures),
             color = Color.White.copy(alpha = 0.94f),
             maxLines = 1,
         )
@@ -1411,9 +1358,7 @@ private fun TimelineHeader(
     ) {
         Text(
             text = label,
-            fontSize = 13.sp,
-            lineHeight = 14.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.bodyMedium.merge(TabularFigures),
             color = Color.White.copy(alpha = 0.90f),
             maxLines = 1,
         )
@@ -1434,9 +1379,7 @@ private fun TimelineHeader(
         Spacer(Modifier.width(7.dp))
         Text(
             text = count.toString(),
-            fontSize = 10.sp,
-            lineHeight = 11.sp,
-            fontWeight = FontWeight.Medium,
+            style = MaterialTheme.typography.labelMedium.merge(TabularFigures),
             color = Color.White.copy(alpha = 0.36f),
         )
     }
@@ -1496,15 +1439,12 @@ private fun TimelineScrubber(
                     .clip(PillShape)
                     .liquidGlass(tint = Color(0xFF211A3C), alpha = 0.82f)
                     .opticalGlass(intensity = 0.86f, light = Offset(0.16f, 0.06f))
-                    .glassSheen()
                     .liquidGlassBorder(PillShape)
                     .padding(horizontal = 11.dp, vertical = 7.dp),
             ) {
                 Text(
                     text = jumps[activeIndex.coerceIn(jumps.indices)].label,
-                    fontSize = 11.sp,
-                    lineHeight = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.labelMedium.merge(TabularFigures),
                     color = Color.White,
                     maxLines = 1,
                 )
@@ -1670,7 +1610,6 @@ private fun AlbumCard(
             .pressBounce(interaction, pressedScale = 0.95f)
             .clip(shape)
             .background(Color.White.copy(alpha = 0.05f))
-            .glassSheen()
             .liquidGlassBorder(shape)
             .clickable(
                 interactionSource = interaction,
@@ -1693,15 +1632,14 @@ private fun AlbumCard(
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Text(
                 text       = album.name,
-                fontSize   = 14.sp,
-                fontWeight = FontWeight.SemiBold,
+                style      = MaterialTheme.typography.titleMedium,
                 color      = Color.White,
                 maxLines   = 1,
                 overflow   = TextOverflow.Ellipsis,
             )
             Text(
                 text     = "${album.count} items",
-                fontSize = 11.sp,
+                style    = MaterialTheme.typography.labelMedium.merge(TabularFigures),
                 color    = Color.White.copy(alpha = 0.50f),
             )
         }
@@ -1711,13 +1649,13 @@ private fun AlbumCard(
 @Composable
 private fun TrashCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
+    val shape = MaterialTheme.shapes.large
     Column(
         modifier = modifier
             .pressBounce(interaction, pressedScale = 0.95f)
-            .clip(CardShape)
+            .clip(shape)
             .background(Color(0xFFFF7A7A).copy(alpha = 0.07f))
-            .glassSheen()
-            .liquidGlassBorder(CardShape)
+            .liquidGlassBorder(shape)
             .clickable(
                 interactionSource = interaction,
                 indication        = null,
@@ -1740,14 +1678,13 @@ private fun TrashCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Text(
                 text       = "Recently Deleted",
-                fontSize   = 14.sp,
-                fontWeight = FontWeight.SemiBold,
+                style      = MaterialTheme.typography.titleMedium,
                 color      = Color.White,
                 maxLines   = 1,
             )
             Text(
                 text     = "30-day recycle bin",
-                fontSize = 11.sp,
+                style    = MaterialTheme.typography.labelMedium.merge(TabularFigures),
                 color    = Color.White.copy(alpha = 0.50f),
             )
         }
@@ -1771,7 +1708,6 @@ private fun AlbumBackChip(
                 .pressBounce(interaction, pressedScale = 0.93f)
                 .clip(PillShape)
                 .liquidGlass(alpha = 0.55f)
-                .glassSheen()
                 .liquidGlassBorder(PillShape)
                 .clickable(
                     interactionSource = interaction,
@@ -1785,14 +1721,17 @@ private fun AlbumBackChip(
             Spacer(Modifier.width(4.dp))
             Text(
                 text       = name,
-                fontSize   = 15.sp,
-                fontWeight = FontWeight.Bold,
+                style      = MaterialTheme.typography.titleMedium,
                 color      = Color.White,
                 maxLines   = 1,
                 overflow   = TextOverflow.Ellipsis,
             )
         }
         Spacer(Modifier.width(10.dp))
-        Text("$count items", fontSize = 12.sp, color = Color.White.copy(alpha = 0.45f))
+        Text(
+            text = "$count items",
+            style = MaterialTheme.typography.labelMedium.merge(TabularFigures),
+            color = Color.White.copy(alpha = 0.45f),
+        )
     }
 }

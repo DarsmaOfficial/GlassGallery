@@ -49,7 +49,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.darsma.glassgallery.ui.components.BouncyIconButton
 import com.darsma.glassgallery.ui.components.Motion
-import com.darsma.glassgallery.ui.components.glassSheen
 import com.darsma.glassgallery.ui.components.liquidGlass
 import com.darsma.glassgallery.ui.components.liquidGlassBorder
 import com.google.android.gms.tasks.Task
@@ -187,7 +186,6 @@ internal fun BarcodeResultsSheet(
                     .padding(horizontal = 12.dp, vertical = 12.dp)
                     .clip(ScanSheetShape)
                     .liquidGlass(alpha = 0.90f)
-                    .glassSheen()
                     .liquidGlassBorder(ScanSheetShape)
                     .navigationBarsPadding()
                     .padding(horizontal = 18.dp, vertical = 16.dp),

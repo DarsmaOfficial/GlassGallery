@@ -18,7 +18,6 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -80,14 +79,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.darsma.glassgallery.data.MediaStoreVideoSource
 import com.darsma.glassgallery.data.Video
@@ -95,11 +94,11 @@ import com.darsma.glassgallery.ui.components.BouncyIconButton
 import com.darsma.glassgallery.ui.components.MediaDetailsSheet
 import com.darsma.glassgallery.ui.components.Motion
 import com.darsma.glassgallery.ui.components.favoriteBurst
-import com.darsma.glassgallery.ui.components.glassSheen
 import com.darsma.glassgallery.ui.components.liquidGlass
 import com.darsma.glassgallery.ui.components.liquidGlassBorder
 import com.darsma.glassgallery.ui.components.opticalGlass
 import com.darsma.glassgallery.ui.gallery.GalleryUiState
+import com.darsma.glassgallery.ui.theme.TabularFigures
 import com.google.mlkit.vision.barcode.common.Barcode
 import kotlinx.coroutines.delay
 import com.darsma.glassgallery.ui.components.pressBounce
@@ -161,23 +160,20 @@ fun PhotoViewerScreen(
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     val scope = rememberCoroutineScope()
 
-    // One-finger pull-down dismissal at 1x zoom. The surface follows the
-    // finger directly, rounds its corners and reveals depth behind it; cancel
-    // rides the spatial spring back home.
-    var dismissTargetY by remember { mutableFloatStateOf(0f) }
-    var dismissDragging by remember { mutableStateOf(false) }
-    val renderedDismissY by animateFloatAsState(
-        targetValue = dismissTargetY,
-        animationSpec = when {
-            dismissDragging -> tween(durationMillis = 0)
-            containerSize.height > 0 && dismissTargetY > containerSize.height * 0.75f ->
-                tween(durationMillis = 190)
-            else -> Motion.spatial()
-        },
-        label = "photo-pull-dismiss-y",
-    )
+    // One-finger pull-down dismissal at 1x zoom. `dismissY` is an Animatable so
+    // the surface follows the finger directly, then on release rides a spring
+    // that *continues at the finger's measured velocity*: a quick flick throws
+    // it off-screen, a gentle release settles it back home. Because it is an
+    // Animatable, a fresh touch can cancel any in-flight settle/exit and hand
+    // control straight back to the finger from the current value.
+    val dismissY = remember { Animatable(0f) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val dismissVelocityTracker = remember { VelocityTracker() }
+    // Flick threshold expressed in dp/s and converted to px/s so it feels the
+    // same across densities. ~1100 dp/s sits in the requested 800–1200 range.
+    val flickThresholdPx = with(LocalDensity.current) { 1100.dp.toPx() }
     val dismissProgress = if (containerSize.height > 0) {
-        (renderedDismissY / (containerSize.height * 0.48f)).coerceIn(0f, 1f)
+        (dismissY.value / (containerSize.height * 0.48f)).coerceIn(0f, 1f)
     } else 0f
 
     // Zoom/pan are Animatables so every settle — pinch release, double-tap,
@@ -222,7 +218,7 @@ fun PhotoViewerScreen(
                     scaleX = s
                     scaleY = s
                     alpha = 1f - 0.28f * back - 0.08f * dismissProgress
-                    translationY = 26.dp.toPx() * back + renderedDismissY
+                    translationY = 26.dp.toPx() * back + dismissY.value
                     if (p > 0.001f) {
                         shape = RoundedCornerShape(48f * p)
                         clip = true
@@ -262,31 +258,63 @@ fun PhotoViewerScreen(
                     if (zoom.value <= 1.02f && containerSize.height > 0) {
                         detectVerticalDragGestures(
                             onDragStart = {
-                                dismissDragging = true
+                                // A fresh touch: measure velocity anew and hand
+                                // control back to the finger, cancelling any
+                                // in-flight settle/exit from the current value.
+                                dismissVelocityTracker.resetTracking()
+                                scope.launch { dismissY.stop() }
+                                dragOffsetY = dismissY.value
                             },
                             onVerticalDrag = { change, dragAmount ->
-                                val next = (dismissTargetY + dragAmount).coerceAtLeast(0f)
+                                // Feed real pointer samples so the release
+                                // velocity is measured, not frame-differenced.
+                                dismissVelocityTracker.addPosition(
+                                    change.uptimeMillis, change.position,
+                                )
+                                val next = (dragOffsetY + dragAmount).coerceAtLeast(0f)
                                 if (next > 0f || dragAmount > 0f) {
                                     change.consume()
-                                    dismissTargetY = next
+                                    dragOffsetY = next
+                                    scope.launch { dismissY.snapTo(next) }
                                 }
                             },
                             onDragCancel = {
-                                dismissDragging = false
-                                dismissTargetY = 0f
+                                dismissVelocityTracker.resetTracking()
+                                scope.launch {
+                                    dismissY.animateTo(0f, Motion.settle())
+                                }
                             },
                             onDragEnd = {
-                                dismissDragging = false
-                                val dismiss = dismissTargetY > containerSize.height * 0.16f
-                                if (dismiss) {
+                                val height = containerSize.height
+                                // Real measured release velocity (px/s, +down).
+                                val releaseVelocity =
+                                    dismissVelocityTracker.calculateVelocity().y
+                                // Dismiss on EITHER a committed pull distance OR
+                                // a downward flick that beats the threshold.
+                                val passedDistance =
+                                    height > 0 && dismissY.value > height * 0.30f
+                                val flickedToDismiss = releaseVelocity > flickThresholdPx
+                                if (passedDistance || flickedToDismiss) {
                                     chromeVisible = false
-                                    dismissTargetY = containerSize.height * 1.08f
                                     scope.launch {
-                                        delay(190L)
+                                        // Travelling surface continues at the
+                                        // finger's speed, then navigates away.
+                                        dismissY.animateTo(
+                                            targetValue = height * 1.1f,
+                                            animationSpec = Motion.spatial(),
+                                            initialVelocity = releaseVelocity,
+                                        )
                                         onBack()
                                     }
                                 } else {
-                                    dismissTargetY = 0f
+                                    scope.launch {
+                                        // Settle home, carrying release velocity.
+                                        dismissY.animateTo(
+                                            targetValue = 0f,
+                                            animationSpec = Motion.settle(),
+                                            initialVelocity = releaseVelocity,
+                                        )
+                                    }
                                 }
                             },
                         )
@@ -320,7 +348,7 @@ fun PhotoViewerScreen(
             }
 
             AnimatedVisibility(
-                visible = renderedDismissY > 8f,
+                visible = dismissY.value > 8f,
                 enter = fadeIn(Motion.snappy()) + scaleIn(Motion.morph(), initialScale = 0.72f),
                 exit = fadeOut(Motion.snappy()) + scaleOut(Motion.snappy(), targetScale = 0.76f),
                 modifier = Modifier
@@ -344,8 +372,7 @@ fun PhotoViewerScreen(
                     Text(
                         text = if (dismissProgress > 0.72f) "Release to close" else "Pull to close",
                         color = Color.White.copy(alpha = 0.92f),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.labelSmall,
                     )
                 }
             }
@@ -366,7 +393,6 @@ fun PhotoViewerScreen(
                         .clip(ChromeShape)
                         .liquidGlass(alpha = 0.42f)
                         .opticalGlass(intensity = 0.76f)
-                        .glassSheen()
                         .padding(horizontal = 6.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -381,8 +407,7 @@ fun PhotoViewerScreen(
                     ) {
                         Text(
                             text       = photo?.title ?: "",
-                            style      = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
+                            style      = MaterialTheme.typography.titleMedium,
                             color      = Color.White,
                             maxLines   = 1,
                             overflow   = TextOverflow.Ellipsis,
@@ -394,7 +419,7 @@ fun PhotoViewerScreen(
                         ) {
                             Text(
                                 text     = photo?.readableSize ?: "",
-                                fontSize = 11.sp,
+                                style    = MaterialTheme.typography.labelMedium.merge(TabularFigures),
                                 color    = Color.White.copy(alpha = 0.55f),
                             )
                         }
@@ -458,7 +483,6 @@ fun PhotoViewerScreen(
                         .clip(ChromeShape)
                         .liquidGlass(alpha = 0.50f)
                         .opticalGlass(intensity = 0.82f)
-                        .glassSheen()
                         .liquidGlassBorder(ChromeShape)
                         .padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -598,7 +622,7 @@ private fun BottomAction(
         BouncyIconButton(onClick = { if (enabled) onClick() }, size = 46.dp) {
             Icon(icon, label, tint = Color.White, modifier = Modifier.size(21.dp))
         }
-        Text(label, fontSize = 10.sp, color = Color.White.copy(alpha = 0.70f))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.70f))
     }
 }
 
@@ -673,7 +697,6 @@ private fun SlideshowOverlay(
                 .padding(16.dp)
                 .clip(RoundedCornerShape(50))
                 .liquidGlass(alpha = 0.45f)
-                .glassSheen()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication        = null,
@@ -684,7 +707,7 @@ private fun SlideshowOverlay(
         ) {
             Icon(Icons.Rounded.Close, "Stop slideshow", tint = Color.White, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
-            Text("${photos.size} photos", fontSize = 12.sp, color = Color.White)
+            Text("${photos.size} photos", style = MaterialTheme.typography.bodyMedium.merge(TabularFigures), color = Color.White)
         }
     }
 }

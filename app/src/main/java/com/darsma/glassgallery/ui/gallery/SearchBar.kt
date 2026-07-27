@@ -15,6 +15,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -39,7 +40,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -49,6 +49,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -59,7 +60,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -69,6 +69,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -78,21 +79,24 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.darsma.glassgallery.data.Video
+import com.darsma.glassgallery.ui.components.GlassSurface
 import com.darsma.glassgallery.ui.components.Motion
-import com.darsma.glassgallery.ui.components.liquidGlassBorder
 import com.darsma.glassgallery.ui.components.pressBounce
+import com.darsma.glassgallery.ui.components.specularFlash
+import com.darsma.glassgallery.ui.theme.GlassRole
+import com.darsma.glassgallery.ui.theme.GlassStyle
+import com.darsma.glassgallery.ui.theme.GlassTheme
+import com.darsma.glassgallery.ui.theme.PillShape
+import com.darsma.glassgallery.ui.theme.TabularFigures
 import kotlinx.coroutines.delay
 import kotlin.math.max
 
@@ -178,7 +182,7 @@ fun DynamicIslandSearch(
         val capsuleWidth = lerp(lerp(orbSize, focusedWidth, open), finalWidth, widthStage)
         val capsuleRadius = lerp(orbSize / 2, capsuleHeight / 2, open)
         val capsuleShape = RoundedCornerShape(capsuleRadius)
-        val panelShape = RoundedCornerShape(30.dp)
+        val panelShape = MaterialTheme.shapes.extraLarge
 
         // Respect the live IME inset. Results remain visible while typing and
         // no longer appear only after Enter hides the keyboard.
@@ -224,7 +228,10 @@ fun DynamicIslandSearch(
         // Stable result-chamber surface. Its final dimensions never animate on
         // each keystroke; only a GPU transform reveals the material.
         if (hasQuery || panelStage > 0.001f) {
-            Box(
+            GlassSurface(
+                backdrop = null,
+                role = GlassRole.Modal,
+                shape = panelShape,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .offset(y = panelY)
@@ -237,20 +244,14 @@ fun DynamicIslandSearch(
                         scaleY = 0.055f + 0.945f * panelStage
                         translationY = (1f - panelStage) * -16f
                         transformOrigin = TransformOrigin(0.5f, 0f)
-                    }
-                    .shadow(26.dp, panelShape, clip = false)
-                    .clip(panelShape)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color(0xFF262032).copy(alpha = 0.99f),
-                                Color(0xFF111019).copy(alpha = 0.995f),
-                                Color(0xFF07070C),
-                            )
-                        )
-                    ),
+                    },
             ) {
-                SearchSurfaceChrome(expand, Modifier.fillMaxSize())
+                SearchSurfaceChrome(
+                    progress = expand,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .specularFlash(trigger = results.size),
+                )
             }
 
             Box(
@@ -290,7 +291,10 @@ fun DynamicIslandSearch(
                 .zIndex(2.5f),
         )
 
-        Box(
+        GlassSurface(
+            backdrop = null,
+            role = GlassRole.Inline,
+            shape = capsuleShape,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .offset(x = capsuleX, y = capsuleY)
@@ -302,17 +306,6 @@ fun DynamicIslandSearch(
                     scaleX = 0.90f + 0.10f * availability
                     scaleY = 0.90f + 0.10f * availability
                 }
-                .shadow(18.dp, capsuleShape, clip = false)
-                .clip(capsuleShape)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            Color(0xFF30273E).copy(alpha = 0.99f),
-                            Color(0xFF15131D).copy(alpha = 0.995f),
-                            Color(0xFF09090E),
-                        )
-                    )
-                )
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -365,7 +358,7 @@ private fun SearchFieldRow(
             modifier = Modifier
                 .padding(start = if (active) 13.dp else 9.dp)
                 .size(if (active) 30.dp else 20.dp)
-                .clip(CircleShape)
+                .clip(PillShape)
                 .background(if (active) Color.White.copy(alpha = 0.065f) else Color.Transparent)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -397,7 +390,7 @@ private fun SearchFieldRow(
                 Text(
                     "Search photos, videos, text, labels",
                     color = Color.White.copy(alpha = 0.42f),
-                    fontSize = 14.sp,
+                    style = MaterialTheme.typography.bodyLarge,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -407,11 +400,7 @@ private fun SearchFieldRow(
                 onValueChange = { onQueryChange(it.take(96)) },
                 enabled = active,
                 singleLine = true,
-                textStyle = TextStyle(
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                ),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
                 cursorBrush = SolidColor(Color(0xFFC8B5FF)),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 // Enter is only a keyboard-dismiss action. Filtering happens
@@ -429,7 +418,7 @@ private fun SearchFieldRow(
                         .align(Alignment.CenterEnd)
                         .pressBounce(clearInteraction, 0.84f, Motion.snappy(), haptic = false)
                         .size(27.dp)
-                        .clip(CircleShape)
+                        .clip(PillShape)
                         .background(Color.White.copy(alpha = 0.07f))
                         .clickable(
                             interactionSource = clearInteraction,
@@ -472,8 +461,8 @@ private fun SearchFieldRow(
                     modifier = Modifier
                         .pressBounce(closeInteraction, 0.92f, Motion.snappy(), haptic = false)
                         .height(34.dp)
-                        .clip(RoundedCornerShape(17.dp))
-                        .background(Color(0xFFC8B5FF).copy(alpha = 0.14f))
+                        .clip(PillShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
                         .clickable(
                             interactionSource = closeInteraction,
                             indication = null,
@@ -487,8 +476,7 @@ private fun SearchFieldRow(
                     Text(
                         text = "Done",
                         color = Color.White.copy(alpha = 0.94f),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelLarge,
                     )
                 }
             }
@@ -563,9 +551,7 @@ private fun SearchResultsChamber(
                             else -> "$count live matches"
                         },
                         color = Color.White.copy(alpha = 0.97f),
-                        fontSize = 13.sp,
-                        lineHeight = 17.sp,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium.merge(TabularFigures),
                         maxLines = 1,
                     )
                 }
@@ -579,8 +565,7 @@ private fun SearchResultsChamber(
                         else -> "Updates as you type · “${query.trim()}”"
                     },
                     color = Color.White.copy(alpha = 0.43f),
-                    fontSize = 10.sp,
-                    lineHeight = 13.sp,
+                    style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -647,7 +632,8 @@ private fun SearchResultCard(
 ) {
     val context = LocalContext.current
     val interaction = remember { MutableInteractionSource() }
-    val shape = RoundedCornerShape(19.dp)
+    val inlineStyle = GlassTheme.tokens.styleFor(GlassRole.Inline)
+    val shape = MaterialTheme.shapes.large as RoundedCornerShape
     val imageRequest = remember(media.thumbnailUri) {
         ImageRequest.Builder(context)
             .data(media.thumbnailUri)
@@ -678,7 +664,7 @@ private fun SearchResultCard(
             .fillMaxWidth()
             .aspectRatio(1.10f)
             .clip(shape)
-            .background(Color(0xFF17131F))
+            .background(inlineStyle.tint.copy(alpha = inlineStyle.tintAlpha))
             .clickable(interaction, indication = null, onClick = onClick),
     ) {
         AsyncImage(
@@ -703,9 +689,9 @@ private fun SearchResultCard(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .size(34.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.38f))
-                    .liquidGlassBorder(CircleShape),
+                    .clip(PillShape)
+                    .background(inlineStyle.tint.copy(alpha = inlineStyle.tintAlpha))
+                    .glassTokenBorder(PillShape, inlineStyle),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -719,9 +705,7 @@ private fun SearchResultCard(
         Text(
             media.title,
             color = Color.White,
-            fontSize = 11.sp,
-            lineHeight = 12.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.titleMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
@@ -733,14 +717,16 @@ private fun SearchResultCard(
             Text(
                 formatSearchDuration(media.duration),
                 color = Color.White.copy(alpha = 0.95f),
-                fontSize = 8.sp,
-                lineHeight = 9.sp,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.labelSmall.merge(TabularFigures),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(end = 8.dp, bottom = 8.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color.Black.copy(alpha = 0.60f))
+                    .clip(MaterialTheme.shapes.extraSmall)
+                    .background(
+                        inlineStyle.tint.copy(
+                            alpha = (inlineStyle.tintAlpha + 0.32f).coerceAtMost(1f),
+                        )
+                    )
                     .padding(horizontal = 5.dp, vertical = 3.dp),
             )
         }
@@ -765,15 +751,14 @@ private fun SearchPreparingState(
         Text(
             "Finding “$safeQuery”",
             color = Color.White.copy(alpha = 0.90f),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         Text(
             "Local results are condensing into place",
             color = Color.White.copy(alpha = 0.38f),
-            fontSize = 10.sp,
+            style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
         )
         Spacer(Modifier.height(15.dp))
@@ -793,7 +778,8 @@ private fun SearchPlaceholderCard(
     progress: Float,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(16.dp)
+    val inlineStyle = GlassTheme.tokens.styleFor(GlassRole.Inline)
+    val shape = MaterialTheme.shapes.medium
     val p = liquidSegment(progress, index * 0.055f, 1f)
     Box(
         modifier = modifier
@@ -805,16 +791,8 @@ private fun SearchPlaceholderCard(
                 translationY = (1f - p) * (8f + index * 2f)
             }
             .clip(shape)
-            .background(
-                Brush.linearGradient(
-                    listOf(
-                        Color.White.copy(alpha = 0.085f),
-                        Color(0xFFB7A0FF).copy(alpha = 0.045f),
-                        Color.White.copy(alpha = 0.025f),
-                    )
-                )
-            )
-            .liquidGlassBorder(shape),
+            .background(inlineStyle.tint.copy(alpha = inlineStyle.tintAlpha))
+            .glassTokenBorder(shape, inlineStyle),
     ) {
         Box(
             modifier = Modifier
@@ -822,7 +800,7 @@ private fun SearchPlaceholderCard(
                 .padding(start = 9.dp, bottom = 9.dp)
                 .width(if (index % 2 == 0) 58.dp else 76.dp)
                 .height(5.dp)
-                .clip(CircleShape)
+                .clip(PillShape)
                 .background(Color.White.copy(alpha = 0.13f)),
         )
     }
@@ -840,13 +818,12 @@ private fun EmptySearchResult(query: String, modifier: Modifier = Modifier) {
         Text(
             "Nothing found",
             color = Color.White.copy(alpha = 0.93f),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleMedium,
         )
         Text(
             "No media matches “${query.trim()}”",
             color = Color.White.copy(alpha = 0.44f),
-            fontSize = 11.sp,
+            style = MaterialTheme.typography.bodyMedium,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -940,26 +917,32 @@ private fun SearchSurfaceChrome(progress: Float, modifier: Modifier = Modifier) 
             ),
             cornerRadius = CornerRadius(size.minDimension / 2f, size.minDimension / 2f),
         )
-        drawRoundRect(
-            brush = Brush.linearGradient(
-                listOf(
-                    Color.White.copy(alpha = 0.27f),
-                    Color.White.copy(alpha = 0.055f),
-                    Color(0xFFA98FFF).copy(alpha = 0.15f),
-                ),
-                start = Offset.Zero,
-                end = Offset(size.width, size.height),
-            ),
-            cornerRadius = CornerRadius(size.minDimension / 2f, size.minDimension / 2f),
-            style = Stroke(1.dp.toPx()),
-        )
     }
 }
 
 @Composable
 private fun SearchCardRim(shape: RoundedCornerShape, modifier: Modifier = Modifier) {
-    Box(modifier = modifier.liquidGlassBorder(shape))
+    val inlineStyle = GlassTheme.tokens.styleFor(GlassRole.Inline)
+    Box(modifier = modifier.glassTokenBorder(shape, inlineStyle))
 }
+
+private fun Modifier.glassTokenBorder(
+    shape: Shape,
+    style: GlassStyle,
+): Modifier = border(
+    width = style.borderWidth,
+    brush = Brush.linearGradient(
+        colors = listOf(
+            Color.White.copy(alpha = style.rimLightAlpha),
+            Color.White.copy(alpha = style.rimLightAlpha * 0.12f),
+            Color.Black.copy(alpha = style.rimDarkAlpha * 0.12f),
+            Color.Black.copy(alpha = style.rimDarkAlpha),
+        ),
+        start = Offset.Zero,
+        end = Offset.Infinite,
+    ),
+    shape = shape,
+)
 
 @Composable
 private fun LiquidSearchBridge(

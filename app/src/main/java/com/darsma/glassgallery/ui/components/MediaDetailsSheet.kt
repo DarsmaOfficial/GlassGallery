@@ -111,7 +111,6 @@ fun MediaDetailsSheet(
                     .padding(horizontal = 12.dp, vertical = 12.dp)
                     .clip(SheetShape)
                     .liquidGlass(alpha = 0.90f)
-                    .glassSheen()
                     .liquidGlassBorder(SheetShape)
                     .navigationBarsPadding()
                     .padding(horizontal = 22.dp, vertical = 20.dp),

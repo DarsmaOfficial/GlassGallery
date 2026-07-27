@@ -3,11 +3,7 @@ package com.darsma.glassgallery.ui.components
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -25,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -51,8 +48,8 @@ import kotlin.math.sin
 /**
  * A play/pause control whose *container* is alive. The background is a true
  * shape Morph (androidx.graphics.shapes): a perfect circle while paused that
- * blooms into an 8-petal scallop while playing — and the scallop slowly spins,
- * so the whole control reads as "media is in motion" at a glance.
+ * blooms into an 8-petal scallop while playing, with a finite twist only while
+ * the play/pause state is changing.
  */
 @Composable
 fun MorphingPlayPauseButton(
@@ -74,21 +71,23 @@ fun MorphingPlayPauseButton(
     }
 
     // Circle <-> scallop with a springy overshoot so the bloom feels organic.
-    val morphProgress by animateFloatAsState(
+    val morphProgress = animateFloatAsState(
         targetValue   = if (isPlaying) 1f else 0f,
         animationSpec = Motion.expressive(),
         label         = "pp-morph",
     )
-    // Perpetual slow spin; invisible while the shape is a circle, alive while
-    // it is a scallop — no state juggling required.
-    val spin by rememberInfiniteTransition(label = "pp-spin").animateFloat(
-        initialValue  = 0f,
-        targetValue   = 360f,
-        animationSpec = infiniteRepeatable(
-            tween(durationMillis = 11_000, easing = LinearEasing)
-        ),
-        label = "pp-spin-angle",
+    var spinTarget by remember { mutableFloatStateOf(0f) }
+    val spin = animateFloatAsState(
+        targetValue   = spinTarget,
+        animationSpec = Motion.expressive(),
+        label         = "pp-transition-spin",
     )
+    var lastPlayingState by remember { mutableStateOf(isPlaying) }
+    LaunchedEffect(isPlaying) {
+        if (lastPlayingState == isPlaying) return@LaunchedEffect
+        lastPlayingState = isPlaying
+        spinTarget += if (isPlaying) 90f else -90f
+    }
 
     val interaction = remember { MutableInteractionSource() }
     val androidPath = remember { android.graphics.Path() }
@@ -99,11 +98,11 @@ fun MorphingPlayPauseButton(
             .pressBounce(interaction, pressedScale = 0.82f, spec = Motion.snappy())
             .size(size)
             .drawBehind {
-                morph.toPath(morphProgress.coerceIn(0f, 1f), androidPath)
+                morph.toPath(morphProgress.value.coerceIn(0f, 1f), androidPath)
                 scaleMatrix.reset()
                 scaleMatrix.setScale(this.size.width, this.size.height)
                 androidPath.transform(scaleMatrix)
-                rotate(degrees = spin) {
+                rotate(degrees = spin.value) {
                     drawPath(path = androidPath.asComposePath(), color = color)
                 }
             }

@@ -9,20 +9,26 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalInspectionMode
 import kotlin.math.max
 
 /**
- * Capability marker retained for call sites that may add optional AGSL later.
- * v20 deliberately avoids RenderEffect on glass chrome: a graphics-layer blur
- * blurs the element's own photo/video/text rather than the content behind it.
+ * Capability marker retained for existing call sites.
+ *
+ * RenderEffect is available from Android 12. The backdrop engine itself still checks the actual
+ * destination canvas and degrades to its tinted fallback when hardware rendering is unavailable.
  */
 object GlassShader {
-    val supported: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    val supported: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 }
 
 /**
@@ -63,13 +69,39 @@ fun Modifier.glassSheen(): Modifier {
 }
 
 /**
- * Compatibility no-op. A real backdrop blur needs explicit background capture;
- * applying RenderEffect here would self-blur the chrome and its content.
+ * Legacy self-blur retained for source compatibility.
+ *
+ * This modifier now applies a real RenderEffect, but it necessarily blurs the modified element's
+ * own content. New glass chrome should use [GlassSurface], which samples an independent
+ * [GlassBackdropHost] and draws content sharply after the effect layer.
  */
+@Deprecated(
+    message = "Self-blurs content. Use GlassSurface with a GlassBackdropHost instead.",
+)
 @Composable
 fun Modifier.frostedBlur(radius: Float = 24f): Modifier {
-    @Suppress("UNUSED_VARIABLE") val ignoredRadius = radius
-    return this
+    val inspectionMode = LocalInspectionMode.current
+    val safeRadius = radius.takeIf { it.isFinite() && it > 0f }
+    val blurEffect = remember(safeRadius, inspectionMode) {
+        if (safeRadius != null && !inspectionMode) {
+            runCatching {
+                BlurEffect(
+                    radiusX = safeRadius,
+                    radiusY = safeRadius,
+                    edgeTreatment = TileMode.Clamp,
+                )
+            }.getOrNull()
+        } else {
+            null
+        }
+    }
+    return if (blurEffect != null) {
+        this.graphicsLayer {
+            renderEffect = blurEffect
+        }
+    } else {
+        this
+    }
 }
 
 /**

@@ -11,7 +11,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -27,21 +28,23 @@ import kotlin.math.sin
 /**
  * Decorative optical light for translucent chrome. API 33+ uses AGSL; API
  * 31/32 receives a gradient fallback. This never applies RenderEffect and
- * never samples or blurs photo, video, icon, or text content.
+ * never samples or blurs photo, video, icon, or text content. It is static by
+ * default so ordinary glass surfaces do not create ambient frame invalidation;
+ * callers can still opt into a clock for a deliberate animated event.
  */
 @Composable
 fun Modifier.opticalGlass(
     intensity: Float = 0.72f,
     light: Offset = Offset(0.18f, 0.06f),
-    animated: Boolean = true,
+    animated: Boolean = false,
 ): Modifier {
     // `animated = false` must be genuinely static. The earlier 24-hour tween
     // still invalidated every card on every display frame, even though the
     // visual movement was imperceptible. Removing that clock is especially
     // important for large galleries and for keeping text input responsive.
-    val phase = if (animated) {
+    val phase: State<Float> = if (animated) {
         val transition = rememberInfiniteTransition(label = "optical-glass-clock")
-        val animatedPhase by transition.animateFloat(
+        transition.animateFloat(
             initialValue = 0f,
             targetValue = 1f,
             animationSpec = infiniteRepeatable(
@@ -50,9 +53,8 @@ fun Modifier.opticalGlass(
             ),
             label = "optical-glass-phase",
         )
-        animatedPhase
     } else {
-        0.42f
+        remember { mutableStateOf(0.42f) }
     }
     val program = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         remember { runCatching { OpticalProgram() }.getOrNull() }
@@ -69,16 +71,16 @@ fun Modifier.opticalGlass(
                         canvas = canvas.nativeCanvas,
                         width = size.width,
                         height = size.height,
-                        time = phase,
+                        time = phase.value,
                         lightX = light.x.coerceIn(-0.25f, 1.25f),
                         lightY = light.y.coerceIn(-0.25f, 1.25f),
                         intensity = safeIntensity,
                     )
                 }
             }.isSuccess
-            if (!drawn) drawOpticalFallback(light, safeIntensity, phase)
+            if (!drawn) drawOpticalFallback(light, safeIntensity, phase.value)
         } else {
-            drawOpticalFallback(light, safeIntensity, phase)
+            drawOpticalFallback(light, safeIntensity, phase.value)
         }
     }
 }

@@ -3,6 +3,7 @@ package com.darsma.glassgallery.ui.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
 private val DarkColorScheme = darkColorScheme(
@@ -23,10 +24,17 @@ private val DarkColorScheme = darkColorScheme(
     outline              = Color(0xFF978DA6),
 )
 
+/**
+ * Applies the Glass Gallery color, type, shape, and material-token systems.
+ */
 @Composable
 fun GlassGalleryTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = DarkColorScheme,
-        content     = content,
-    )
+    CompositionLocalProvider(LocalGlassTokens provides DefaultGlassTokens) {
+        MaterialTheme(
+            colorScheme = DarkColorScheme,
+            typography  = GlassTypography,
+            shapes      = GlassShapes,
+            content     = content,
+        )
+    }
 }

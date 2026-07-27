@@ -43,7 +43,8 @@ fun Modifier.liquidGlass(
 }
 
 /**
- * Subtle optical rim: bright at the top-left, almost invisible elsewhere.
+ * Directional optical rim: incident light catches the top-left edge while the
+ * bottom-right edge gains a denser, shadow-toned boundary.
  */
 fun Modifier.liquidGlassBorder(
     shape: Shape,
@@ -52,10 +53,11 @@ fun Modifier.liquidGlassBorder(
     width = width,
     brush = Brush.linearGradient(
         colorStops = arrayOf(
-            0.00f to Color.White.copy(alpha = 0.30f),
-            0.32f to Color.White.copy(alpha = 0.12f),
-            0.70f to Color.White.copy(alpha = 0.035f),
-            1.00f to Color.White.copy(alpha = 0.15f),
+            0.00f to Color.White.copy(alpha = 0.38f),
+            0.30f to Color.White.copy(alpha = 0.16f),
+            0.58f to Color.White.copy(alpha = 0.045f),
+            0.78f to Color(0xFF171225).copy(alpha = 0.14f),
+            1.00f to Color(0xFF08070E).copy(alpha = 0.28f),
         ),
         start = Offset.Zero,
         end = Offset.Infinite,

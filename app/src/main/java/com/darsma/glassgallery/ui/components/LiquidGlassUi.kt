@@ -3,11 +3,7 @@ package com.darsma.glassgallery.ui.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -62,29 +58,17 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 private val BarShape = RoundedCornerShape(50)
+private const val SPECULAR_IDLE = -1f
 
-/** Slow, restrained aurora that gives translucent chrome visual depth. */
+/**
+ * Static aurora field that gives translucent chrome a rich backdrop to sample.
+ *
+ * Ambient drift used to keep two infinite transitions alive for the lifetime
+ * of the gallery. Fixed, asymmetric blob positions preserve the optical depth
+ * without invalidating the background on every display frame.
+ */
 @Composable
 fun AuroraBackground(modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "aurora")
-    val driftA by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            tween(durationMillis = 18_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "aurora-a",
-    )
-    val driftB by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            tween(durationMillis = 26_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "aurora-b",
-    )
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -96,7 +80,7 @@ fun AuroraBackground(modifier: Modifier = Modifier) {
                 )
                 val w = size.width
                 val h = size.height
-                val first = Offset(w * (0.06f + 0.30f * driftA), h * (0.02f + 0.09f * driftB))
+                val first = Offset(w * 0.19f, h * 0.08f)
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(Color(0xFF5E48A6).copy(alpha = 0.28f), Color.Transparent),
@@ -106,7 +90,7 @@ fun AuroraBackground(modifier: Modifier = Modifier) {
                     radius = w * 0.88f,
                     center = first,
                 )
-                val second = Offset(w * (0.98f - 0.30f * driftB), h * (0.34f + 0.11f * driftA))
+                val second = Offset(w * 0.79f, h * 0.40f)
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(Color(0xFF17618A).copy(alpha = 0.22f), Color.Transparent),
@@ -116,7 +100,7 @@ fun AuroraBackground(modifier: Modifier = Modifier) {
                     radius = w * 0.78f,
                     center = second,
                 )
-                val third = Offset(w * (0.40f + 0.15f * driftB), h * (0.96f - 0.08f * driftA))
+                val third = Offset(w * 0.49f, h * 0.92f)
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(Color(0xFF7B315D).copy(alpha = 0.16f), Color.Transparent),
@@ -130,32 +114,83 @@ fun AuroraBackground(modifier: Modifier = Modifier) {
     )
 }
 
-/** Subtle moving highlight; one draw pass and no self-blur. */
+/**
+ * Runs one specular sweep when [trigger] changes, then becomes draw-idle.
+ *
+ * State-driven flashes replace ambient sheen loops so light responds to an
+ * entrance, selection, or gesture instead of keeping the GPU awake forever.
+ */
+@Composable
+fun Modifier.specularFlash(
+    trigger: Any?,
+    durationMillis: Int = 620,
+): Modifier {
+    val sweep = remember { Animatable(SPECULAR_IDLE) }
+    LaunchedEffect(trigger) {
+        sweep.snapTo(0f)
+        sweep.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(
+                durationMillis = durationMillis.coerceAtLeast(1),
+                easing = LinearEasing,
+            ),
+        )
+        sweep.snapTo(SPECULAR_IDLE)
+    }
+    return drawFiniteSpecular(
+        progress = { sweep.value },
+        peakAlpha = 0.15f,
+    )
+}
+
+/**
+ * Compatibility highlight that runs once when its modifier node enters.
+ *
+ * Existing call sites keep their entrance polish without each surface owning
+ * a perpetual animation clock. At rest the draw pass exits before adding light.
+ */
 @Composable
 fun Modifier.liquidHighlight(): Modifier {
-    val transition = rememberInfiniteTransition(label = "specular")
-    val sweep by transition.animateFloat(
-        initialValue = -0.7f,
-        targetValue = 1.7f,
-        animationSpec = infiniteRepeatable(
-            tween(durationMillis = 6000, delayMillis = 1800, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "specular-x",
+    val sweep = remember { Animatable(SPECULAR_IDLE) }
+    LaunchedEffect(Unit) {
+        sweep.snapTo(0f)
+        sweep.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(
+                durationMillis = 720,
+                easing = LinearEasing,
+            ),
+        )
+        sweep.snapTo(SPECULAR_IDLE)
+    }
+    return drawFiniteSpecular(
+        progress = { sweep.value },
+        peakAlpha = 0.07f,
     )
+}
+
+private fun Modifier.drawFiniteSpecular(
+    progress: () -> Float,
+    peakAlpha: Float,
+): Modifier {
     return this.drawWithContent {
         drawContent()
-        val band = size.width * 0.30f
-        val x = sweep * size.width
+        val sweep = progress()
+        if (sweep == SPECULAR_IDLE || size.minDimension <= 0f) return@drawWithContent
+
+        val band = size.width * 0.34f
+        val x = -band + sweep * (size.width + band)
         drawRect(
             brush = Brush.linearGradient(
                 colors = listOf(
                     Color.Transparent,
-                    Color.White.copy(alpha = 0.040f),
+                    Color.White.copy(alpha = peakAlpha * 0.42f),
+                    Color.White.copy(alpha = peakAlpha),
+                    Color.White.copy(alpha = peakAlpha * 0.30f),
                     Color.Transparent,
                 ),
-                start = Offset(x, 0f),
-                end = Offset(x + band, size.height),
+                start = Offset(x, -size.height * 0.12f),
+                end = Offset(x + band, size.height * 1.12f),
             ),
         )
     }
@@ -184,8 +219,6 @@ fun LiquidTabBar(
             .clip(BarShape)
             .liquidGlass(alpha = 0.70f)
             .opticalGlass(intensity = 0.78f, light = Offset(0.16f, 0.04f))
-            .glassSheen()
-            .liquidHighlight()
             .liquidGlassBorder(BarShape),
     ) {
         val haptic = LocalHapticFeedback.current
@@ -247,7 +280,7 @@ fun LiquidTabBar(
                     intensity = 0.64f + tension01 * 0.20f,
                     light = Offset(if (movingRight) 0.78f else 0.22f, 0.08f),
                 )
-                .liquidHighlight()
+                .specularFlash(trigger = safeIndex)
                 .liquidGlassBorder(indicatorShape),
         ) {
             // A bright droplet rides the fast edge while the capsule is under

@@ -17,7 +17,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,7 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -37,6 +35,12 @@ import androidx.compose.ui.unit.Dp
 /**
  * Central motion vocabulary. Every animated surface in the app pulls its spring
  * from here so timing feels consistent — the hallmark of a polished product.
+ *
+ * Usage map:
+ * - snappy/standard: direct controls and routine state changes.
+ * - expressive/spatial/morph: hero travel, depth, and connected glass shapes.
+ * - elastic/settle: gesture release and final alignment.
+ * - bouncy/gentle: playful emphasis and soft secondary transitions.
  */
 object Motion {
 

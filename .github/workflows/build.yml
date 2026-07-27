@@ -28,25 +28,35 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+      - name: Build release APK
+        run: gradle :app:assembleRelease --stacktrace
 
-      - name: Upload debug APK
+      - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: GlassGallery-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: GlassGallery-release-${{ github.sha }}
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
           retention-days: 30
+
+      - name: Upload R8 mapping files
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlassGallery-mapping-release-${{ github.sha }}
+          path: app/build/outputs/mapping/release/
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Publish rolling "latest" release
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: "Latest build (${{ github.sha }})"
+          name: "Latest release build (${{ github.sha }})"
           prerelease: true
           make_latest: false
           body: |
-            Automatically built debug APK from the most recent push to `main`.
+            R8-optimised, resource-shrunk release build from the most recent push to `main`.
             Commit: ${{ github.sha }}
-          files: app/build/outputs/apk/debug/app-debug.apk
+            This APK is signed with a CI test key which changes between builds, so you must UNINSTALL the app before installing this APK over an older one.
+          files: app/build/outputs/apk/release/app-release.apk

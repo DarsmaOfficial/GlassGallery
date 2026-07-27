@@ -131,8 +131,8 @@ fun GlassBackdropHost(
  *
  * The shared source layer is only replayed here; its `renderEffect` is never assigned. The local
  * layer uses [TileMode.Clamp], then tint, highlight, sharp [content], and rim are drawn outside that
- * effect layer. Missing capture, previews, the first frame, software canvases, invalid coordinates,
- * and any capture failure all use a non-transparent tinted-gradient fallback.
+ * effect layer. Missing capture, previews, software canvases, invalid coordinates, and any capture
+ * failure all use a non-transparent tinted-gradient fallback.
  */
 @Composable
 fun GlassSurface(
@@ -146,7 +146,6 @@ fun GlassSurface(
     val effectLayer = rememberGraphicsLayer()
     val inspectionMode = LocalInspectionMode.current
     var surfaceCoordinates: LayoutCoordinates? by remember(backdrop) { mutableStateOf(null) }
-    var firstDrawComplete by remember(backdrop) { mutableStateOf(false) }
 
     val rimBrush = Brush.linearGradient(
         colors = listOf(
@@ -183,8 +182,14 @@ fun GlassSurface(
             }
             .clip(shape)
             .drawWithCache {
-                val blurRadiusPx = style.blurRadius.toPx()
-                val validBlurRadius = blurRadiusPx.isFinite() && blurRadiusPx >= 0f
+                val requestedBlurRadiusPx = style.blurRadius.toPx()
+                val validBlurRadius =
+                    requestedBlurRadiusPx.isFinite() && requestedBlurRadiusPx >= 0f
+                val blurRadiusPx = if (validBlurRadius) {
+                    requestedBlurRadiusPx.coerceAtMost(MAX_BLUR_RADIUS_PX)
+                } else {
+                    0f
+                }
                 val paddingPx = if (validBlurRadius) {
                     ceil(blurRadiusPx * EFFECT_PADDING_MULTIPLIER).toInt().coerceAtLeast(0)
                 } else {
@@ -278,7 +283,6 @@ fun GlassSurface(
                         sourceLayer.size != IntSize.Zero
 
                     val hardwareCanvas = if (
-                        firstDrawComplete &&
                         !inspectionMode &&
                         widthPx > 0 &&
                         heightPx > 0 &&
@@ -338,10 +342,6 @@ fun GlassSurface(
                     drawRect(brush = highlightBrush)
 
                     drawContent()
-
-                    if (!firstDrawComplete) {
-                        firstDrawComplete = true
-                    }
                 }
             }
             .border(
@@ -385,5 +385,7 @@ private fun Modifier.recordBackdropSource(state: GlassBackdropState): Modifier =
     }
 }
 
+/** Bounds the per-frame GPU offscreen so large token values cannot make scrolling stutter. */
+private const val MAX_BLUR_RADIUS_PX = 60f
 private const val EFFECT_PADDING_MULTIPLIER = 2f
 private const val MINIMUM_FALLBACK_ALPHA = 0.22f

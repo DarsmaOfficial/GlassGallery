@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.darsma.glassgallery.ui.theme.GlassRole
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -208,18 +209,57 @@ fun LiquidTabBar(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     icons: List<ImageVector>? = null,
+    backdrop: GlassBackdropState? = null,
 ) {
     if (options.isEmpty()) return
+
+    if (backdrop != null) {
+        GlassSurface(
+            backdrop = backdrop,
+            role = GlassRole.Floating,
+            shape = BarShape,
+            modifier = modifier.height(52.dp),
+        ) {
+            LiquidTabBarContent(
+                options = options,
+                selectedIndex = selectedIndex,
+                onSelect = onSelect,
+                icons = icons,
+                modifier = Modifier
+                    .matchParentSize()
+                    .opticalGlass(intensity = 0.78f, light = Offset(0.16f, 0.04f))
+                    .liquidGlassBorder(BarShape),
+            )
+        }
+    } else {
+        LiquidTabBarContent(
+            options = options,
+            selectedIndex = selectedIndex,
+            onSelect = onSelect,
+            icons = icons,
+            modifier = modifier
+                .height(52.dp)
+                .clip(BarShape)
+                .liquidGlass(alpha = 0.70f)
+                .opticalGlass(intensity = 0.78f, light = Offset(0.16f, 0.04f))
+                .liquidGlassBorder(BarShape),
+        )
+    }
+}
+
+@Composable
+private fun LiquidTabBarContent(
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier,
+    icons: List<ImageVector>?,
+) {
     val primary = MaterialTheme.colorScheme.primary
     val accent = Color(0xFF9A7FEA)
 
     BoxWithConstraints(
-        modifier = modifier
-            .height(52.dp)
-            .clip(BarShape)
-            .liquidGlass(alpha = 0.70f)
-            .opticalGlass(intensity = 0.78f, light = Offset(0.16f, 0.04f))
-            .liquidGlassBorder(BarShape),
+        modifier = modifier,
     ) {
         val haptic = LocalHapticFeedback.current
         val safeIndex = selectedIndex.coerceIn(options.indices)

@@ -18,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -632,6 +633,12 @@ private fun SearchResultCard(
 ) {
     val context = LocalContext.current
     val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressHighlight by animateFloatAsState(
+        targetValue = if (pressed) 1f else 0f,
+        animationSpec = Motion.snappy(),
+        label = "search-card-press",
+    )
     val inlineStyle = GlassTheme.tokens.styleFor(GlassRole.Inline)
     val shape = MaterialTheme.shapes.large as RoundedCornerShape
     val imageRequest = remember(media.thumbnailUri) {
@@ -644,10 +651,9 @@ private fun SearchResultCard(
     }
     val itemEntrance = remember(media.id) { Animatable(0f) }
     LaunchedEffect(media.id) {
-        // LazyVerticalGrid composes only the visible cards, so this finite
-        // stagger is inexpensive. New matches condense out of the island;
-        // retained matches simply glide to their new ranked position.
-        delay((index.coerceAtMost(7) * 18L))
+        // Each visible card animates in immediately — no per-index start delay,
+        // so results land at once instead of trickling in while typing.
+        // Retained matches simply glide to their new ranked position.
         itemEntrance.animateTo(1f, Motion.settle())
     }
     Box(
@@ -684,6 +690,13 @@ private fun SearchResultCard(
                 )
             )
         )
+        if (pressHighlight > 0.001f) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .background(Color.White.copy(alpha = 0.10f * pressHighlight))
+            )
+        }
         if (media.isVideo) {
             Box(
                 modifier = Modifier

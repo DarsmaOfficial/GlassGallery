@@ -223,13 +223,18 @@ fun GalleryScreen(
     // Hoisted grid state — drives the scroll-aware glass header and scrubber.
     val gridState = rememberLazyGridState()
     val screenScope = rememberCoroutineScope()
-    val headerGlass = remember {
+    val headerCollapse = remember {
         derivedStateOf {
             if (gridState.firstVisibleItemIndex > 0) {
                 1f
             } else {
                 (gridState.firstVisibleItemScrollOffset / 120f).coerceIn(0f, 1f)
             }
+        }
+    }
+    val headerGlassAlpha = remember {
+        derivedStateOf {
+            0.72f + (0.28f * headerCollapse.value)
         }
     }
     // Pinch-to-resize is remembered independently for every tab.
@@ -424,10 +429,9 @@ fun GalleryScreen(
                                         itemsIndexed(
                                             items = list,
                                             key   = { _, video -> video.id },
-                                        ) { index, video ->
+                                        ) { _, video ->
                                             VideoCard(
                                                 video         = video,
-                                                index         = index,
                                                 isFavorite    = video.id in favorites,
                                                 columns       = gridColumns,
                                                 selected      = video.id in selectedIds,
@@ -508,7 +512,7 @@ fun GalleryScreen(
                         },
                 ) {
 
-                // ── Floating glass header: transparent at rest, frosts on scroll ──
+                // ── Glass header: clearly frosted at rest, deepens on scroll ──
                 val successState = uiState as? GalleryUiState.Success
                 val mediaList    = successState?.videos ?: emptyList()
                 Box(modifier = Modifier.fillMaxWidth()) {
@@ -518,7 +522,7 @@ fun GalleryScreen(
                         shape = RectangleShape,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .graphicsLayer { alpha = headerGlass.value },
+                            .graphicsLayer { alpha = headerGlassAlpha.value },
                     ) {
                         // This sizing layer keeps the blur behind the status bar.
                         Column(
@@ -535,7 +539,7 @@ fun GalleryScreen(
                             .statusBarsPadding(),
                     ) {
                         GalleryHeader(
-                            collapse       = headerGlass.value,
+                            collapse       = headerCollapse.value,
                             videoCount     = mediaList.count { it.isVideo },
                             photoCount     = mediaList.count { !it.isVideo },
                             totalSizeBytes = mediaList.sumOf { it.sizeBytes },
@@ -548,7 +552,7 @@ fun GalleryScreen(
 
                 // Compact sticky context chip: useful, but never competes with media.
                 AnimatedVisibility(
-                    visible = !searchExpanded && headerGlass.value > (16f / 120f) &&
+                    visible = !searchExpanded && headerCollapse.value > (16f / 120f) &&
                         stickyLabel != null &&
                         !(mediaFilter == MediaFilter.ALBUMS && openAlbum == null),
                     enter = slideInVertically(initialOffsetY = { -it }, animationSpec = Motion.expressive()) +
@@ -646,6 +650,7 @@ fun GalleryScreen(
                         },
                         onSelect      = { index -> viewModel.setMediaFilter(MediaFilter.entries[index]) },
                         modifier      = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        backdrop      = backdropState,
                     )
                 }
 
@@ -924,7 +929,6 @@ private fun GalleryHeader(
 @Composable
 private fun VideoCard(
     video: Video,
-    index: Int,
     isFavorite: Boolean,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
@@ -988,7 +992,6 @@ private fun VideoCard(
 
     var appeared by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        delay(index.coerceAtMost(12) * 24L)
         appeared = true
     }
     val appear by animateFloatAsState(
@@ -1553,10 +1556,9 @@ private fun AlbumShelf(
         verticalArrangement   = Arrangement.spacedBy(16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        itemsIndexed(albums, key = { _, a -> "album-${a.name}" }) { index, album ->
+        itemsIndexed(albums, key = { _, a -> "album-${a.name}" }) { _, album ->
             AlbumCard(
                 album    = album,
-                index    = index,
                 onClick  = { onOpen(album.name) },
                 modifier = Modifier.animateItem(
                     fadeInSpec    = Motion.standard(),
@@ -1574,7 +1576,6 @@ private fun AlbumShelf(
 @Composable
 private fun AlbumCard(
     album: Album,
-    index: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1590,7 +1591,6 @@ private fun AlbumCard(
 
     var appeared by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        delay(index.coerceAtMost(10) * 34L)
         appeared = true
     }
     val appear by animateFloatAsState(

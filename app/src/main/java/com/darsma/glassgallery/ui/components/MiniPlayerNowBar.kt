@@ -2,7 +2,6 @@
 
 package com.darsma.glassgallery.ui.components
 
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -10,16 +9,12 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,13 +25,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,7 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -56,9 +46,9 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.darsma.glassgallery.data.Video
-
-private val CapsuleShape = RoundedCornerShape(24.dp)
-private val PillShape    = RoundedCornerShape(50)
+import com.darsma.glassgallery.ui.theme.GlassRole
+import com.darsma.glassgallery.ui.theme.GlassTheme
+import com.darsma.glassgallery.ui.theme.PillShape
 
 @Composable
 fun MiniPlayer(
@@ -86,12 +76,10 @@ fun MiniPlayer(
         video ?: return@AnimatedVisibility
 
         val interaction = remember { MutableInteractionSource() }
-        val pressed by interaction.collectIsPressedAsState()
-        val capsuleScale by animateFloatAsState(
-            targetValue   = if (pressed) 0.97f else 1f,
-            animationSpec = Motion.bouncy(),
-            label         = "capsule-scale",
-        )
+        // The floating capsule pulls its whole material — tint, translucency,
+        // rim, and elevation — from the shared glass token ladder.
+        val floating     = GlassTheme.tokens.styleFor(GlassRole.Floating)
+        val capsuleShape = RoundedCornerShape(floating.defaultRadius)
 
         with(sharedTransitionScope) {
             Box(
@@ -108,16 +96,20 @@ fun MiniPlayer(
                             Motion.spatial()
                         },
                     )
-                    .scale(capsuleScale)
-                    .clip(CapsuleShape)
-                    .background(
-                        Brush.horizontalGradient(
-                            colors = listOf(
-                                Color(0xFF221A47),
-                                Color(0xFF2A2156),
-                                Color(0xFF201842),
-                            )
-                        )
+                    .pressBounce(
+                        interactionSource = interaction,
+                        pressedScale      = 0.97f,
+                        spec              = Motion.bouncy(),
+                    )
+                    .shadow(
+                        elevation = floating.shadowElevation,
+                        shape     = capsuleShape,
+                        clip      = false,
+                    )
+                    .clip(capsuleShape)
+                    .liquidGlass(
+                        tint  = floating.tint,
+                        alpha = floating.tintAlpha,
                     )
                     .opticalGlass(intensity = 0.82f)
                     .specularFlash(trigger = video.id)
@@ -140,8 +132,8 @@ fun MiniPlayer(
                             .fillMaxHeight()
                             .clip(
                                 RoundedCornerShape(
-                                    topStart    = 24.dp,
-                                    bottomStart = 24.dp,
+                                    topStart    = floating.defaultRadius,
+                                    bottomStart = floating.defaultRadius,
                                     topEnd      = 0.dp,
                                     bottomEnd   = 0.dp,
                                 )
@@ -164,7 +156,7 @@ fun MiniPlayer(
                                     Brush.horizontalGradient(
                                         colors = listOf(
                                             Color.Transparent,
-                                            Color(0xCC221A47),
+                                            floating.tint.copy(alpha = 0.80f),
                                         )
                                     )
                                 )
@@ -184,8 +176,10 @@ fun MiniPlayer(
                             color      = Color.White,
                             maxLines   = 1,
                             overflow   = TextOverflow.Ellipsis,
-                            // Long titles glide horizontally instead of clipping.
-                            modifier   = Modifier.basicMarquee(),
+                            // Long titles glide horizontally while playing; the
+                            // scroll is gated to playback so a paused/idle bar
+                            // holds still instead of animating perpetually.
+                            modifier   = if (isPlaying) Modifier.basicMarquee() else Modifier,
                         )
                         Spacer(Modifier.height(3.dp))
                         Text(
@@ -213,7 +207,7 @@ fun MiniPlayer(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .liquidGlassBorder(CapsuleShape)
+                        .liquidGlassBorder(capsuleShape, width = floating.borderWidth)
                 )
             }
         }

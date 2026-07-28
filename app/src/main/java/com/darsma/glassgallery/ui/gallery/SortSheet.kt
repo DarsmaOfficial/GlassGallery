@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -44,16 +46,16 @@ import androidx.compose.ui.unit.dp
 import com.darsma.glassgallery.data.SortOrder
 import com.darsma.glassgallery.ui.components.GlassSurface
 import com.darsma.glassgallery.ui.components.Motion
+import com.darsma.glassgallery.ui.components.pressBounce
 import com.darsma.glassgallery.ui.components.specularFlash
 import com.darsma.glassgallery.ui.theme.GlassRole
 import com.darsma.glassgallery.ui.theme.GlassStyle
 import com.darsma.glassgallery.ui.theme.GlassTheme
 import com.darsma.glassgallery.ui.theme.PillShape
-import kotlinx.coroutines.delay
 
 /**
  * A glass bottom-sheet for picking the gallery sort order. Animates in with a
- * scrim fade + spring slide, and each row staggers up for a refined feel.
+ * scrim fade + spring slide; rows rise together as the sheet settles.
  */
 @Composable
 fun SortSheet(
@@ -126,11 +128,10 @@ fun SortSheet(
                         modifier = Modifier.padding(start = 6.dp, bottom = 8.dp),
                     )
 
-                    SortOrder.entries.forEachIndexed { index, order ->
+                    SortOrder.entries.forEach { order ->
                         SortRow(
                             order    = order,
                             selected = order == current,
-                            index    = index,
                             onClick  = { onSelect(order) },
                         )
                     }
@@ -145,15 +146,12 @@ fun SortSheet(
 private fun SortRow(
     order: SortOrder,
     selected: Boolean,
-    index: Int,
     onClick: () -> Unit,
 ) {
-    // Staggered entrance — each row eases up just after the previous one.
+    // Entrance — rows rise together as the sheet settles into place, rather
+    // than trickling in one after another.
     var appeared by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(40L + index * 32L)
-        appeared = true
-    }
+    LaunchedEffect(Unit) { appeared = true }
     val appear by animateFloatAsState(
         targetValue   = if (appeared) 1f else 0f,
         animationSpec = Motion.expressive(),
@@ -175,6 +173,7 @@ private fun SortRow(
                 alpha        = appear
                 translationY = (1f - appear) * 26f
             }
+            .pressBounce(interaction, 0.97f, Motion.snappy(), haptic = false)
             .fillMaxWidth()
             .padding(vertical = 3.dp)
             .clip(rowShape)
@@ -200,8 +199,8 @@ private fun SortRow(
         // Check mark pops in when selected.
         AnimatedVisibility(
             visible = selected,
-            enter   = fadeIn(Motion.snappy()),
-            exit    = fadeOut(Motion.snappy()),
+            enter   = fadeIn(Motion.snappy()) + scaleIn(Motion.bouncy(), initialScale = 0.5f),
+            exit    = fadeOut(Motion.snappy()) + scaleOut(Motion.snappy(), targetScale = 0.5f),
         ) {
             Box(
                 modifier = Modifier

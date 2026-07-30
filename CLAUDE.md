@@ -127,7 +127,7 @@ test, and does not inspect the merged manifest. So of the nine gates:
 | 1 compile | **partly** — it builds, but `--warning-mode` is not set, so "zero new warnings" is unchecked |
 | 2 lint | ❌ no lint step exists, and there is no config or baseline |
 | 3 tests | ❌ no test step, no test source set, no test dependencies |
-| 4 merged manifest | ❌ **not enforced anywhere.** `guard-cost.py` inspects *edits*; manifest merging pulls permissions from AARs nobody edited, so the invariant's only automated check does not cover its main threat |
+| 4 merged manifest | ✅ **enforced** — `tools/check_manifest_permissions.sh` runs `aapt2 dump permissions` on the built APK and fails the build if either network permission is present. Fails closed on missing APK, missing/failing `aapt2`, empty output, or unparseable entries. Prints the full permission list on success. **Boundary below.** |
 | 5 macrobenchmark | ❌ no module, no baseline |
 | 6 reduced motion | ❌ needs an instrumented test that does not exist |
 | 7 device | ❌ needs hardware |
@@ -140,6 +140,28 @@ code compiles and packages. Nothing more.**
 
 **Never report a gate as passed because it was expected to pass.** State which gates ran and which
 did not, every time. An unverified claim of success is worse than an admitted gap.
+
+### Gate 4's exact boundary — do not overstate it
+
+CI fails the release build if the **packaged APK** requests `INTERNET` or `ACCESS_NETWORK_STATE`.
+That is all it proves. It does **not** prove the app causes no network traffic:
+
+- **Delegated network needs no permission in this process.** `startActivity(ACTION_VIEW, https://…)`,
+  a custom tab, a share intent, or binding a service in another app can all move data off-device.
+  Unbundled ML Kit's model download happens in the Play Services process — the very threat this
+  project bans it for is **outside** what this gate can see.
+- **Debug and test variants are unchecked.** CI builds release only.
+- **Other permissions are unchecked.** The gate is a two-item denylist, not an allowlist. A
+  dependency adding `AD_ID`, `QUERY_ALL_PACKAGES` or a location permission passes green — and so
+  does the *removal* of an expected permission. The permission list is printed on success so a human
+  can spot it; nobody reads passing logs. An expected-permissions allowlist is filed as a task.
+- Raw sockets and NDK network genuinely fail without `INTERNET`, so the socket claim itself is sound.
+
+**A history worth remembering:** the invariant was false for the entire life of this project. The
+source manifest declared three permissions; the shipped APK carried `INTERNET` and
+`ACCESS_NETWORK_STATE` merged in from a dependency, plus three more nobody requested. CI run **#73**
+found it on the gate's first contact with a real APK; run **#74** confirmed the repair.
+"Declared in source" silently stood in for "present in the artifact" for months.
 
 ## Working agreement
 

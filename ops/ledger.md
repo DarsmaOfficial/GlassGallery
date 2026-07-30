@@ -107,6 +107,78 @@ false-PASS class as the two already found in this programme's own tooling.
 
 ---
 
+## 🔴🔴 T003 — THE INVARIANT IS AND ALWAYS HAS BEEN FALSE IN THE SHIPPED APK
+
+**NOT MERGED. Blocked on a decision only the user can make.**
+Branch `feature/manifest-network-gate` (`6e8dc1e`), CI run **#73 FAILED at the gate step** — which is
+the gate working, on its first contact with a real APK.
+
+The app's source manifest declares three permissions. **The built APK contains eight:**
+
+```
+android.permission.READ_MEDIA_VIDEO          declared
+android.permission.READ_MEDIA_IMAGES         declared
+android.permission.READ_EXTERNAL_STORAGE     declared
+android.permission.ACCESS_NETWORK_STATE      ← BANNED, merged in
+android.permission.INTERNET                  ← BANNED, merged in
+android.permission.WAKE_LOCK                 ← undeclared, unaccounted for
+android.permission.RECEIVE_BOOT_COMPLETED    ← undeclared, unaccounted for
+android.permission.FOREGROUND_SERVICE        ← undeclared, unaccounted for
+```
+
+**Consequences, stated plainly:**
+
+1. CLAUDE.md's claim that a paid API is "structurally impossible in a process that cannot open a
+   socket" **is false of the artifact** and has been false in every APK ever published. It was only
+   ever true of the *source* manifest. `declares` vs `merged` is exactly the distinction gate 4
+   exists to police, and nothing had ever looked at the merged set.
+2. The programme prompt's central premise — the invariant that "replaces every cost rule" — rests on
+   a fact that does not hold.
+3. Three further permissions arrived that nobody asked for. Red-team predicted precisely this class
+   ("a new permission nobody asked for is a signal regardless of which one it is") and argued the
+   two-item denylist would not surface it. It was right, and the evidence print caught them anyway.
+
+**Likely source:** bundled ML Kit → `com.google.mlkit:common` → `com.google.android.gms:play-services-basement`,
+whose AAR manifest declares the network pair. `WAKE_LOCK` / `RECEIVE_BOOT_COMPLETED` /
+`FOREGROUND_SERVICE` point at a scheduling/worker component in the same chain. **Unconfirmed** — no
+dependency resolution is possible in this environment; `gradle :app:dependencies` in CI would settle
+it.
+
+**Do NOT merge the gate until this is decided.** Merging turns `main` permanently red and blocks
+every subsequent task.
+
+### Options for the user
+
+| | Approach | Risk |
+|---|---|---|
+| A | Strip via `tools:node="remove"` in the source manifest, then merge the gate | Removing a permission a dependency genuinely uses at runtime causes a failure the build cannot catch. **Requires device testing.** Bundled ML Kit should not need network, but that is an expectation, not a measurement. |
+| B | Merge the gate with the five extras as an explicit, documented baseline; drive to zero as separate tasks | Honest and unblocking, but the invariant stays false meanwhile and the doc must say so. |
+| C | Drop the network permissions from the invariant and rewrite the guarantee around "no code we wrote opens a socket" | Weakest. Abandons the structural claim. |
+| D | Remove the dependency chain that contributes them | Largest change; costs ML Kit features. |
+
+**Recommendation: A, gated on device verification** — it is the only option that makes the stated
+invariant true. Verify barcode scan, OCR search, image labelling and portrait blur on hardware after
+stripping, because that is exactly what a build cannot prove.
+
+### Verified as working, regardless of the decision
+
+- The gate fires on a real APK and names the offending entries.
+- `if: always()` (added pre-push) meant both artifacts uploaded despite the failure — the APK is
+  retrievable for diagnosis, which is what made this diagnosable at all.
+- Publish correctly **skipped** on the failed gate.
+- The evidence print surfaced three violations that were not on the banned list.
+
+### Still unverified
+
+- My 10-case local harness fed the script a **hand-written imitation** of `aapt2` output. It tested
+  the regex against my model of the format, not against aapt2 — the same "validated against itself"
+  defect as the two earlier guards. CI has now proven the parse works on real output for the
+  `uses-permission:` form only.
+- Whether `dump permissions` can miss `uses-permission-sdk-23` or implied-permission forms remains
+  open. Switching the oracle to `dump xmltree` is the deeper fix and is filed.
+
+---
+
 ## Open decisions blocking Phase 1
 
 The programme prompt is wrong on three points. Council briefs must carry the corrections:

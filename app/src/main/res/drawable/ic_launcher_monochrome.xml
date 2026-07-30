@@ -4,6 +4,12 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!--
+        Hidden invariant: path #1 contains twelve de Casteljau subdivision literals
+        from the corner-arc intersection of C=(39,61), r=10 (back pane) and
+        C=(47,69), r=12 (the front pane outset by 2 dp). Keep them synchronized
+        if the front pane changes.
+    -->
     <path
         android:fillColor="#FFFFFF"
         android:pathData="M70.193336,35.058586 C68.66379,31.495461 65.123413,29 61,29 L39,29 C33.477,29 29,33.477 29,39 L29,61 C29,65.123413 31.495461,68.66379 35.058586,70.193336 C35.019836,69.800808 35,69.402721 35,69 L35,47 C35,40.3724 40.3724,35 47,35 L69,35 C69.402721,35 69.800808,35.019836 70.193336,35.058586 Z" />

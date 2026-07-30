@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import itertools
 import math
 import re
 import sys
@@ -9,6 +10,10 @@ from pathlib import Path
 
 CENTER = (54.0, 54.0)
 LIMIT = 33.0
+EXPECTED_VIEWPORT = 108.0
+MIN_COMPOSITING_GAP = 0.04
+EXPECTED_MONOCHROME_GAP = 2.0
+MONOCHROME_GAP_TOLERANCE = 0.01
 FLATNESS = 1e-5
 MAX_DEPTH = 24
 ANDROID_NS = "http://schemas.android.com/apk/res/android"
@@ -332,41 +337,201 @@ def flatten_path(path_data):
     return points
 
 
-def measure_file(path):
+def local_name(tag):
+    return tag.rsplit("}", 1)[-1]
+
+
+def parse_vector(path):
     root = ET.parse(path).getroot()
+    unsupported = {"group", "clip-path"}
+    for element in root.iter():
+        name = local_name(element.tag)
+        if name in unsupported:
+            raise ValueError(f"unsupported <{name}> element")
+
+    viewport_width = root.get(f"{{{ANDROID_NS}}}viewportWidth")
+    viewport_height = root.get(f"{{{ANDROID_NS}}}viewportHeight")
+    try:
+        viewport = (float(viewport_width), float(viewport_height))
+    except (TypeError, ValueError) as error:
+        raise ValueError("viewportWidth and viewportHeight must be numeric") from error
+    if viewport != (EXPECTED_VIEWPORT, EXPECTED_VIEWPORT):
+        raise ValueError(
+            "viewportWidth and viewportHeight must both equal "
+            f"{EXPECTED_VIEWPORT:g}, got {viewport[0]:g}x{viewport[1]:g}"
+        )
+
     path_attribute = f"{{{ANDROID_NS}}}pathData"
-    points = []
+    paths = []
     for element in root.iter():
         path_data = element.get(path_attribute)
         if path_data:
-            points.extend(flatten_path(path_data))
-    if not points:
+            paths.append((element, flatten_path(path_data)))
+    if not paths:
         raise ValueError("no pathData found")
+    return paths
+
+
+def measure_paths(paths):
+    points = [
+        point
+        for _element, path_points in paths
+        for point in path_points
+    ]
     return max(
         math.hypot(point[0] - CENTER[0], point[1] - CENTER[1])
         for point in points
     )
 
 
+def resolve_drawable(repository, reference):
+    prefix = "@drawable/"
+    if not reference.startswith(prefix):
+        raise ValueError(f"unsupported layer reference {reference!r}")
+    name = reference[len(prefix) :]
+    return repository / "app/src/main/res/drawable" / f"{name}.xml"
+
+
+def discover_layers(repository):
+    icon_path = (
+        repository / "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml"
+    )
+    root = ET.parse(icon_path).getroot()
+    drawable_attribute = f"{{{ANDROID_NS}}}drawable"
+    layers = {}
+    for element in root:
+        name = local_name(element.tag)
+        if name not in {"foreground", "monochrome"}:
+            continue
+        reference = element.get(drawable_attribute)
+        if reference is None:
+            raise ValueError(f"<{name}> has no android:drawable")
+        layers[name] = resolve_drawable(repository, reference)
+    missing = {"foreground", "monochrome"} - layers.keys()
+    if missing:
+        raise ValueError(f"missing adaptive-icon layers: {', '.join(sorted(missing))}")
+    return layers
+
+
+def fill_alphas(paths):
+    fill_alpha_attribute = f"{{{ANDROID_NS}}}fillAlpha"
+    alphas = []
+    for element, _points in paths:
+        raw_alpha = element.get(fill_alpha_attribute, "1")
+        try:
+            alpha = float(raw_alpha)
+        except ValueError as error:
+            raise ValueError(f"fillAlpha must be numeric, got {raw_alpha!r}") from error
+        if not 0.0 <= alpha <= 1.0:
+            raise ValueError(f"fillAlpha must be in [0, 1], got {alpha:g}")
+        alphas.append(alpha)
+    return alphas
+
+
+def compositing_gap(paths):
+    alphas = fill_alphas(paths)
+    coverages = []
+    for count in range(1, len(alphas) + 1):
+        for combination in itertools.combinations(alphas, count):
+            coverages.append(
+                1.0 - math.prod(1.0 - alpha for alpha in combination)
+            )
+    return min(
+        abs(left - right)
+        for left, right in itertools.combinations(coverages, 2)
+    )
+
+
+def point_segment_distance(point, start, end):
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    squared_length = dx * dx + dy * dy
+    if squared_length == 0.0:
+        return math.hypot(point[0] - start[0], point[1] - start[1])
+    projection = (
+        (point[0] - start[0]) * dx + (point[1] - start[1]) * dy
+    ) / squared_length
+    projection = max(0.0, min(1.0, projection))
+    closest = (
+        start[0] + projection * dx,
+        start[1] + projection * dy,
+    )
+    return math.hypot(point[0] - closest[0], point[1] - closest[1])
+
+
+def polyline_gap(left, right):
+    distances = []
+    for points, segments in ((left, right), (right, left)):
+        distances.extend(
+            point_segment_distance(point, start, end)
+            for point in points
+            for start, end in zip(segments, segments[1:])
+        )
+    return min(distances)
+
+
+def display_path(path, repository):
+    try:
+        return path.resolve().relative_to(repository)
+    except ValueError:
+        return path
+
+
 def main():
     repository = Path(__file__).resolve().parent.parent
-    defaults = [
-        repository
-        / "app/src/main/res/drawable/ic_launcher_foreground.xml",
-        repository
-        / "app/src/main/res/drawable/ic_launcher_monochrome.xml",
-    ]
-    paths = [Path(argument) for argument in sys.argv[1:]] or defaults
+    try:
+        layers = discover_layers(repository)
+        parsed_layers = {
+            name: parse_vector(path) for name, path in layers.items()
+        }
+    except (ET.ParseError, OSError, ValueError) as error:
+        print(f"HARD FAIL: {error}", file=sys.stderr)
+        return 1
+
     failed = False
-    for path in paths:
-        radius = measure_file(path)
-        try:
-            display_path = path.resolve().relative_to(repository)
-        except ValueError:
-            display_path = path
+    for name, path in layers.items():
+        radius = measure_paths(parsed_layers[name])
         status = "PASS" if radius <= LIMIT else "FAIL"
-        print(f"{display_path}: max radius {radius:.6f} dp ({status})")
+        print(
+            f"{display_path(path, repository)}: "
+            f"max radius {radius:.6f} dp ({status})"
+        )
         failed = failed or radius > LIMIT
+
+    compositing = compositing_gap(parsed_layers["foreground"])
+    compositing_status = (
+        "PASS" if compositing >= MIN_COMPOSITING_GAP else "FAIL"
+    )
+    print(
+        f"COMPOSITING: minimum coverage gap {compositing:.6f} "
+        f"(limit {MIN_COMPOSITING_GAP:.2f}) ({compositing_status})"
+    )
+    failed = failed or compositing < MIN_COMPOSITING_GAP
+
+    monochrome_paths = parsed_layers["monochrome"]
+    if len(monochrome_paths) != 2:
+        print(
+            "MONOCHROME GAP: expected exactly two paths, "
+            f"found {len(monochrome_paths)} (FAIL)"
+        )
+        failed = True
+    else:
+        gap = polyline_gap(
+            monochrome_paths[0][1],
+            monochrome_paths[1][1],
+        )
+        gap_status = (
+            "PASS"
+            if abs(gap - EXPECTED_MONOCHROME_GAP)
+            <= MONOCHROME_GAP_TOLERANCE
+            else "FAIL"
+        )
+        print(
+            f"MONOCHROME GAP: minimum distance {gap:.6f} dp "
+            f"(expected {EXPECTED_MONOCHROME_GAP:.2f} "
+            f"+/- {MONOCHROME_GAP_TOLERANCE:.2f}) ({gap_status})"
+        )
+        failed = failed or gap_status == "FAIL"
     return 1 if failed else 0
 
 

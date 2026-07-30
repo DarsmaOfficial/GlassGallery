@@ -100,6 +100,70 @@ if (( ${#offending_entries[@]} > 0 )); then
     exit 1
 fi
 
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+expected_permissions_path=$script_dir/expected_permissions.txt
+
+if [[ ! -f "$expected_permissions_path" || ! -r "$expected_permissions_path" ]]; then
+    printf 'ERROR: expected permission file is missing or unreadable: %s\n' \
+        "$expected_permissions_path" >&2
+    exit 2
+fi
+
+expected_permission_names=()
+declare -A expected_permission_set=()
+while IFS= read -r line || [[ -n "$line" ]]; do
+    line=${line#"${line%%[![:space:]]*}"}
+    line=${line%"${line##*[![:space:]]}"}
+    if [[ -z "$line" || "$line" == \#* ]]; then
+        continue
+    fi
+    if [[ -z ${expected_permission_set["$line"]+present} ]]; then
+        expected_permission_names+=("$line")
+        expected_permission_set["$line"]=1
+    fi
+done < "$expected_permissions_path"
+
+if (( ${#expected_permission_names[@]} == 0 )); then
+    printf 'ERROR: expected permission file contains no permission entries: %s\n' \
+        "$expected_permissions_path" >&2
+    exit 2
+fi
+
+declare -A observed_permission_set=()
+for permission_name in "${permission_names[@]}"; do
+    observed_permission_set["$permission_name"]=1
+done
+
+unexpected_permission_names=()
+declare -A unexpected_permission_set=()
+for permission_name in "${permission_names[@]}"; do
+    if [[ -z ${expected_permission_set["$permission_name"]+present} &&
+        -z ${unexpected_permission_set["$permission_name"]+present} ]]; then
+        unexpected_permission_names+=("$permission_name")
+        unexpected_permission_set["$permission_name"]=1
+    fi
+done
+
+missing_permission_names=()
+for permission_name in "${expected_permission_names[@]}"; do
+    if [[ -z ${observed_permission_set["$permission_name"]+present} ]]; then
+        missing_permission_names+=("$permission_name")
+    fi
+done
+
+if (( ${#unexpected_permission_names[@]} > 0 || ${#missing_permission_names[@]} > 0 )); then
+    printf 'ERROR: built APK permissions do not match tools/expected_permissions.txt.\n' >&2
+    for permission_name in "${unexpected_permission_names[@]}"; do
+        printf 'UNEXPECTED: %s\n' "$permission_name" >&2
+        printf '  A dependency likely added it; review dependency changes and approve it explicitly before updating the expected file.\n' >&2
+    done
+    for permission_name in "${missing_permission_names[@]}"; do
+        printf 'MISSING: %s\n' "$permission_name" >&2
+        printf '  This may be a user-visible regression; losing a media-read permission breaks the gallery. Restore it or deliberately update the expected file.\n' >&2
+    done
+    exit 1
+fi
+
 printf 'Permissions found in built APK:\n'
 printf '  %s\n' "${permission_names[@]}"
 printf 'No banned network permissions found.\n'

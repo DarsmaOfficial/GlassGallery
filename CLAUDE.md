@@ -77,9 +77,14 @@ Deletion of user media **defaults to recoverable**: `MediaStore.createTrashReque
 lands in the OS 30-day bin. `createDeleteRequest` is permanent and belongs only to an explicit
 "delete forever" action inside Trash.
 
-🔴 **Known bug: `PlayerScreen.kt:412` uses `createDeleteRequest`** while the visually identical
-photo button (`PhotoViewerScreen.kt:457`) uses `createTrashRequest`. Same control, same size, same
-launcher, opposite consequence. Fix before any feature work touches deletion.
+**Fixed in `d077345` (T001).** `PlayerScreen.kt` previously called `createDeleteRequest` while the
+visually identical photo button used `createTrashRequest` — same control, same size, same launcher,
+opposite consequence, no undo. It now trashes like the others and pauses playback first.
+`tools/check_destructive_calls.py` guards against recurrence: `createDeleteRequest` outside
+`ui/trash/TrashScreen.kt` fails, as does a `createTrashRequest` whose last argument is not `true`.
+
+🔴 **Still unverified on hardware:** whether a trashed item is actually restorable from the Trash
+screen. The app holds no `MANAGE_MEDIA`, so MediaProvider may hide trashed rows it does not own.
 
 Identical-looking affordances must have identical consequences. Any change to a write, move, trash
 or delete path gets its test written **before** the change.
@@ -119,8 +124,8 @@ Nothing merges unless **all nine** pass. State explicitly which were run and whi
 
 ### What CI actually checks today — read this before trusting a green tick
 
-CI runs **`gradle :app:assembleRelease` and nothing else.** It does not run `lint`, does not run any
-test, and does not inspect the merged manifest. So of the nine gates:
+CI runs **`gradle :app:assembleRelease`, then the permission gate.** It does not run `lint` and does
+not run any test. So of the nine gates:
 
 | Gate | Enforced by CI today? |
 |---|---|

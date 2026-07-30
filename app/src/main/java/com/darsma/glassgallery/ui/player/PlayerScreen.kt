@@ -224,8 +224,9 @@ fun PlayerScreen(
 
     var detailsVisible by remember { mutableStateOf(false) }
 
-    // System-confirmed delete: MediaStore shows the OS dialog, and on OK we
-    // prune the item from the gallery and leave the player.
+    // System-confirmed trash: MediaStore shows the OS dialog, and on OK we
+    // prune the item from the gallery and leave the player. It is trashed,
+    // not destroyed, and recoverable from the Trash screen for 30 days.
     val deleteLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
@@ -409,8 +410,11 @@ fun PlayerScreen(
                     Spacer(Modifier.width(2.dp))
                     BouncyIconButton(
                         onClick = {
-                            val pi = android.provider.MediaStore.createDeleteRequest(
-                                context.contentResolver, listOf(videoUri)
+                            player.pause()
+                            // Soft delete into the 30-day OS recycle bin, matching the photo viewer
+                            // and the gallery multi-select path.
+                            val pi = MediaStore.createTrashRequest(
+                                context.contentResolver, listOf(videoUri), true
                             )
                             deleteLauncher.launch(
                                 IntentSenderRequest.Builder(pi.intentSender).build()

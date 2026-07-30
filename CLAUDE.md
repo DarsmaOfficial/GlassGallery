@@ -151,10 +151,19 @@ That is all it proves. It does **not** prove the app causes no network traffic:
   Unbundled ML Kit's model download happens in the Play Services process — the very threat this
   project bans it for is **outside** what this gate can see.
 - **Debug and test variants are unchecked.** CI builds release only.
-- **Other permissions are unchecked.** The gate is a two-item denylist, not an allowlist. A
-  dependency adding `AD_ID`, `QUERY_ALL_PACKAGES` or a location permission passes green — and so
-  does the *removal* of an expected permission. The permission list is printed on success so a human
-  can spot it; nobody reads passing logs. An expected-permissions allowlist is filed as a task.
+- **Permissions are now checked in two tiers.** A hard denylist — the two network permissions, plus
+  `AD_ID`, `QUERY_ALL_PACKAGES`, fine/coarse location, `RECORD_AUDIO`, `READ_PHONE_STATE` — is
+  enforced **independently of `tools/expected_permissions.txt`**, so allowlisting one does not let it
+  through. Everything else is compared against that file as a set, failing in **both** directions:
+  an unexpected addition **and** a removal (losing `READ_MEDIA_IMAGES` would otherwise ship green).
+  The two-tier split exists because an allowlist alone is self-approving — the bypass is "paste the
+  line into the txt to make CI green".
+- **Only permission *names* are compared, not attributes.** A dependency merging
+  `READ_EXTERNAL_STORAGE` without `maxSdkVersion="32"` would silently drop the cap and pass green.
+  Known gap, filed.
+- **`<permission>` declarations are invisible** — the parse is anchored to `uses-permission`.
+- A banned hit **short-circuits before the set diff**, so an APK with both problems needs a second
+  CI round-trip to surface the second one.
 - Raw sockets and NDK network genuinely fail without `INTERNET`, so the socket claim itself is sound.
 
 **A history worth remembering:** the invariant was false for the entire life of this project. The

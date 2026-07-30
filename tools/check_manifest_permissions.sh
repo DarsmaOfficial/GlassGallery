@@ -82,16 +82,30 @@ if (( ${#permission_names[@]} == 0 )); then
 fi
 
 offending_entries=()
+banned_network_permission_present=false
 for index in "${!permission_names[@]}"; do
     case "${permission_names[$index]}" in
         android.permission.INTERNET|android.permission.ACCESS_NETWORK_STATE)
+            offending_entries+=("${permission_entries[$index]}")
+            banned_network_permission_present=true
+            ;;
+        com.google.android.gms.permission.AD_ID|\
+        android.permission.QUERY_ALL_PACKAGES|\
+        android.permission.ACCESS_FINE_LOCATION|\
+        android.permission.ACCESS_COARSE_LOCATION|\
+        android.permission.RECORD_AUDIO|\
+        android.permission.READ_PHONE_STATE)
             offending_entries+=("${permission_entries[$index]}")
             ;;
     esac
 done
 
 if (( ${#offending_entries[@]} > 0 )); then
-    printf 'ERROR: banned network permission present in the built APK.\n' >&2
+    if [[ "$banned_network_permission_present" == true ]]; then
+        printf 'ERROR: banned network permission present in the built APK.\n' >&2
+    else
+        printf 'ERROR: banned permission present in the built APK.\n' >&2
+    fi
     printf 'Offending manifest entry:\n' >&2
     printf '  %s\n' "${offending_entries[@]}" >&2
     printf 'Full permission list:\n' >&2
@@ -166,4 +180,4 @@ fi
 
 printf 'Permissions found in built APK:\n'
 printf '  %s\n' "${permission_names[@]}"
-printf 'No banned network permissions found.\n'
+printf 'No banned permissions found.\n'

@@ -36,9 +36,10 @@ jobs:
         run: gradle :app:assembleRelease --stacktrace
 
       - name: Enforce no-network permission invariant
-        run: tools/check_manifest_permissions.sh app/build/outputs/apk/release/app-release.apk
+        run: bash tools/check_manifest_permissions.sh app/build/outputs/apk/release/app-release.apk
 
       - name: Upload release APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: GlassGallery-release-${{ github.sha }}
@@ -47,6 +48,7 @@ jobs:
           retention-days: 30
 
       - name: Upload R8 mapping files
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: GlassGallery-mapping-release-${{ github.sha }}
